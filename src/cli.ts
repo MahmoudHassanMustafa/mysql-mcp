@@ -166,7 +166,6 @@ async function cmdAdd(name?: string) {
 
     // Test before saving?
     const shouldTest = await askYesNo(rl, "\n  Test connection before saving?", true);
-    rl.close();
 
     if (shouldTest) {
       const ok = await testConnection(conn);
@@ -403,32 +402,33 @@ function printUsage() {
 
 const [command, ...args] = process.argv.slice(2);
 
-switch (command) {
-  case "list":
-  case "ls":
-    cmdList();
-    break;
-  case "add":
-    cmdAdd(args[0]);
-    break;
-  case "remove":
-  case "rm":
-    cmdRemove(args[0]);
-    break;
-  case "test":
-    cmdTest(args[0]);
-    break;
-  case "init":
-    cmdInit();
-    break;
-  case "help":
-  case "--help":
-  case "-h":
-  case undefined:
-    printUsage();
-    break;
-  default:
-    console.log(`Unknown command: ${command}`);
-    printUsage();
-    process.exit(1);
+function run(): Promise<void> | void {
+  switch (command) {
+    case "list":
+    case "ls":
+      return cmdList();
+    case "add":
+      return cmdAdd(args[0]);
+    case "remove":
+    case "rm":
+      return cmdRemove(args[0]);
+    case "test":
+      return cmdTest(args[0]);
+    case "init":
+      return cmdInit();
+    case "help":
+    case "--help":
+    case "-h":
+    case undefined:
+      return printUsage();
+    default:
+      console.log(`Unknown command: ${command}`);
+      printUsage();
+      process.exit(1);
+  }
 }
+
+Promise.resolve(run()).catch((err) => {
+  console.error(`Error: ${err instanceof Error ? err.message : err}`);
+  process.exit(1);
+});

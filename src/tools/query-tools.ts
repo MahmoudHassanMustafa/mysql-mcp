@@ -40,9 +40,11 @@ export function registerQueryTools(server: McpServer) {
       const pool = getPool(connection);
       const db = config.database;
       const timeout = getQueryTimeout(connection);
-      const conn = await pool.getConnection();
+      let conn;
 
       try {
+        conn = await pool.getConnection();
+
         if (db) {
           await conn.query(`USE ${escapeId(db)}`);
         }
@@ -90,7 +92,7 @@ export function registerQueryTools(server: McpServer) {
         const msg = err instanceof Error ? err.message : String(err);
         return toolError(`Query failed: ${sanitizeErrorMessage(msg)}`);
       } finally {
-        conn.release();
+        conn?.release();
       }
     }
   );
@@ -120,9 +122,11 @@ export function registerQueryTools(server: McpServer) {
       const fmt = format ?? "JSON";
       const timeout = getQueryTimeout(connection);
       const db = getConnectionConfig(connection).database;
-      const conn = await pool.getConnection();
+      let conn;
 
       try {
+        conn = await pool.getConnection();
+
         if (db) await conn.query(`USE ${escapeId(db)}`);
 
         const explainSql =
@@ -150,7 +154,7 @@ export function registerQueryTools(server: McpServer) {
         const msg = err instanceof Error ? err.message : String(err);
         return toolError(`EXPLAIN failed: ${sanitizeErrorMessage(msg)}`);
       } finally {
-        conn.release();
+        conn?.release();
       }
     }
   );

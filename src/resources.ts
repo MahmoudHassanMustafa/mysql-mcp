@@ -5,7 +5,7 @@ import {
   listConnectionNames,
   getConnectionConfig,
 } from "./connection.js";
-import { escapeId, qualifiedTable, formatAsTable } from "./helpers.js";
+import { qualifiedTable, formatAsTable } from "./helpers.js";
 
 export function registerResources(server: McpServer) {
   // ── Table schema resource ─────────────────────────────────────────

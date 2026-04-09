@@ -285,7 +285,7 @@ Prompts appear in the MCP prompt list. Select one and provide the required argum
 
 - **Read-only by default.** Write queries (INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE) are blocked unless `"readonly": false` is set on the connection.
 - **Parameterized queries.** The `execute_query` tool uses prepared statements with `?` placeholders to prevent SQL injection.
-- **Result limits.** Query results are capped at 500 rows. Column values are truncated at 60 characters in table output.
+- **Result limits.** Unbounded SELECT queries are auto-limited to 1000 rows. Display output is capped at 500 rows. Column values are truncated at 60 characters in table output.
 - **Config file in .gitignore.** The `config.json` file containing credentials is excluded from version control.
 
 ## Project structure

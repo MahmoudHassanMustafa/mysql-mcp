@@ -13,8 +13,14 @@ export function expandTilde(p: string): string {
 // ── SQL identifier escaping ─────────────────────────────────────────
 
 export function escapeId(name: string): string {
-  if (name.includes("\0") || name.length > 64 || name.length === 0) {
-    throw new Error(`Invalid identifier: "${name.substring(0, 20)}"`);
+  if (name.length === 0) {
+    throw new Error("Identifier cannot be empty");
+  }
+  if (name.length > 64) {
+    throw new Error(`Identifier too long (max 64 chars): "${name.substring(0, 20)}..."`);
+  }
+  if (name.includes("\0")) {
+    throw new Error("Identifier cannot contain NUL bytes");
   }
   return `\`${name.replace(/`/g, "``")}\``;
 }
@@ -40,7 +46,6 @@ export function resolveDb(
   }
   return { db };
 }
-
 
 // ── Tool response helpers ───────────────────────────────────────────
 

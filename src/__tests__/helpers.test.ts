@@ -51,15 +51,15 @@ describe("escapeId", () => {
   });
 
   it("rejects empty names", () => {
-    expect(() => escapeId("")).toThrow("Invalid identifier");
+    expect(() => escapeId("")).toThrow("cannot be empty");
   });
 
   it("rejects names containing NUL bytes", () => {
-    expect(() => escapeId("users\0")).toThrow("Invalid identifier");
+    expect(() => escapeId("users\0")).toThrow("NUL bytes");
   });
 
   it("rejects names longer than 64 characters", () => {
-    expect(() => escapeId("a".repeat(65))).toThrow("Invalid identifier");
+    expect(() => escapeId("a".repeat(65))).toThrow("too long");
   });
 
   it("accepts names exactly 64 characters", () => {

@@ -64,11 +64,17 @@ export async function initConnection(config: DatabaseConfig): Promise<void> {
     }
   }
 
-  const pool = mysql.createPool(poolOpts);
-
-  // Verify the connection works
-  const conn = await pool.getConnection();
-  conn.release();
+  let pool: mysql.Pool;
+  try {
+    pool = mysql.createPool(poolOpts);
+    const conn = await pool.getConnection();
+    conn.release();
+  } catch (err) {
+    // Clean up SSH tunnel if pool creation/verification fails
+    localServer?.close();
+    sshClient?.end();
+    throw err;
+  }
 
   connections.set(config.name, { config, pool, sshClient, localServer });
 }

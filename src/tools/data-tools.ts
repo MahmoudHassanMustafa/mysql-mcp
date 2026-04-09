@@ -91,7 +91,7 @@ export function registerDataTools(server: McpServer) {
       const qt = qualifiedTable(r.db, table);
       const n = limit ?? 5;
 
-      const [rows] = await pool.query(`SELECT * FROM ${qt} LIMIT ${n}`);
+      const [rows] = await pool.query(`SELECT * FROM ${qt} LIMIT ?`, [n]);
       const data = rows as Array<Record<string, unknown>>;
 
       if (data.length === 0) return toolOk(`Table ${table} is empty`);

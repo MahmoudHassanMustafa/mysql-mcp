@@ -17,8 +17,8 @@ A Model Context Protocol (MCP) server that connects Claude Code to MySQL databas
 
 ```bash
 cd mysql-mcp
-npm install
-npm run build
+pnpm install
+pnpm build
 ```
 
 ### Register with Claude Code
@@ -50,7 +50,7 @@ The CLI manages your `config.json` without editing it by hand.
 
 ```bash
 # Link globally (once)
-npm link
+pnpm link --global
 
 # Or run directly
 node dist/cli.js <command>

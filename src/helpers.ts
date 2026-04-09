@@ -120,13 +120,76 @@ export function stripSQLComments(sql: string): string {
 }
 
 /**
+ * Keywords that indicate a write/mutating operation.
+ * Used to reject dangerous queries even when they start with an allowed keyword.
+ */
+const WRITE_KEYWORDS =
+  /\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|REPLACE|RENAME|GRANT|REVOKE|LOCK|UNLOCK|CALL|SET|LOAD|DO|HANDLER|IMPORT|INSTALL|UNINSTALL|RESET|PURGE|PREPARE|EXECUTE|DEALLOCATE)\b/i;
+
+/**
+ * Block SELECT INTO OUTFILE/DUMPFILE — these are SELECTs that write files
+ * to the server filesystem.
+ */
+const INTO_FILE_PATTERN = /\bINTO\s+(OUTFILE|DUMPFILE)\b/i;
+
+/**
  * Whitelist approach: only allow known safe read-only statements.
  * Returns true if the query is safe for read-only connections.
+ *
+ * Rules:
+ * - SELECT, SHOW, DESCRIBE, DESC, EXPLAIN, USE are allowed
+ * - SELECT INTO OUTFILE/DUMPFILE is blocked (writes files)
+ * - WITH queries are allowed ONLY if they contain no write keywords
+ *   (blocks WITH...INSERT, WITH...UPDATE, WITH...DELETE, etc.)
  */
-const READONLY_ALLOWED =
-  /^(SELECT|SHOW|DESCRIBE|DESC|EXPLAIN|USE|WITH\b[\s\S]*?\bSELECT)\b/i;
-
 export function isReadOnlyQuery(sql: string): boolean {
   const normalized = stripSQLComments(sql);
-  return READONLY_ALLOWED.test(normalized);
+
+  // Block SELECT INTO OUTFILE/DUMPFILE regardless of context
+  if (INTO_FILE_PATTERN.test(normalized)) {
+    return false;
+  }
+
+  // Simple read-only statements
+  if (/^(SHOW|DESCRIBE|DESC|EXPLAIN|USE)\b/i.test(normalized)) {
+    return true;
+  }
+
+  // SELECT: allowed as long as it doesn't write files (already checked above)
+  if (/^SELECT\b/i.test(normalized)) {
+    return true;
+  }
+
+  // WITH ... SELECT: must not contain any write keywords anywhere in the query.
+  // This blocks: WITH cte AS (SELECT 1) INSERT INTO ...
+  // False positive edge case: WITH cte AS (SELECT * FROM t WHERE col = 'DELETE')
+  //   -> user can use parameterized queries to avoid: WHERE col = ? with param 'DELETE'
+  if (/^WITH\b/i.test(normalized)) {
+    return !WRITE_KEYWORDS.test(normalized);
+  }
+
+  // Everything else is blocked
+  return false;
+}
+
+/**
+ * Validate that a query is safe for EXPLAIN (SELECT only, no write side-effects).
+ */
+export function isExplainSafe(sql: string): boolean {
+  const normalized = stripSQLComments(sql);
+
+  if (INTO_FILE_PATTERN.test(normalized)) {
+    return false;
+  }
+
+  // Only allow plain SELECT or WITH...SELECT (no write keywords)
+  if (/^SELECT\b/i.test(normalized)) {
+    return true;
+  }
+
+  if (/^WITH\b/i.test(normalized)) {
+    return !WRITE_KEYWORDS.test(normalized);
+  }
+
+  return false;
 }

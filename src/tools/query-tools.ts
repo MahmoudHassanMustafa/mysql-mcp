@@ -7,6 +7,7 @@ import {
   toolOk,
   toolError,
   isReadOnlyQuery,
+  isExplainSafe,
   stripSQLComments,
 } from "../helpers.js";
 
@@ -107,12 +108,11 @@ export function registerQueryTools(server: McpServer) {
         .describe("Output format (default: JSON for richest detail)"),
     },
     async ({ connection, query, format }) => {
-      // Only allow EXPLAIN on SELECT queries
-      const normalized = stripSQLComments(query);
-      if (!/^\s*(SELECT|WITH)\b/i.test(normalized)) {
+      // Only allow EXPLAIN on safe SELECT queries (no INTO OUTFILE, no WITH...INSERT)
+      if (!isExplainSafe(query)) {
         return toolError(
           "EXPLAIN is restricted to SELECT queries for safety.",
-          "Provide a SELECT statement to analyze."
+          "Provide a SELECT statement (no write operations, no INTO OUTFILE/DUMPFILE)."
         );
       }
 

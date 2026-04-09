@@ -1,0 +1,104 @@
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import { getPool } from "../connection.js";
+import {
+  qualifiedTable,
+  resolveDb,
+  formatAsTable,
+  humanSize,
+  toolOk,
+} from "../helpers.js";
+
+export function registerDataTools(server: McpServer) {
+  // ── get_table_stats ───────────────────────────────────────────────
+  server.tool(
+    "get_table_stats",
+    "Show table statistics: row counts, data size, index size, auto_increment, timestamps",
+    {
+      connection: z.string().describe("Connection name"),
+      database: z.string().optional().describe("Database name"),
+      table: z.string().optional().describe("Table name (omit for all tables)"),
+    },
+    async ({ connection, database, table }) => {
+      const r = resolveDb(connection, database);
+      if ("error" in r) return r.error;
+      const pool = getPool(connection);
+
+      let sql = `
+        SELECT
+          TABLE_NAME,
+          TABLE_ROWS,
+          DATA_LENGTH,
+          INDEX_LENGTH,
+          AUTO_INCREMENT,
+          CREATE_TIME,
+          UPDATE_TIME,
+          ENGINE
+        FROM information_schema.TABLES
+        WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'`;
+
+      const params: string[] = [r.db];
+      if (table) {
+        sql += ` AND TABLE_NAME = ?`;
+        params.push(table);
+      }
+      sql += ` ORDER BY DATA_LENGTH DESC`;
+
+      const [rows] = await pool.query(sql, params);
+      const tables = rows as Array<Record<string, unknown>>;
+      if (tables.length === 0) return toolOk("No tables found");
+
+      // Format sizes for readability
+      const formatted = tables.map((t) => ({
+        TABLE_NAME: t.TABLE_NAME,
+        ROWS: t.TABLE_ROWS,
+        DATA_SIZE: humanSize(t.DATA_LENGTH as number),
+        INDEX_SIZE: humanSize(t.INDEX_LENGTH as number),
+        TOTAL_SIZE: humanSize(
+          ((t.DATA_LENGTH as number) ?? 0) + ((t.INDEX_LENGTH as number) ?? 0)
+        ),
+        AUTO_INC: t.AUTO_INCREMENT ?? "N/A",
+        ENGINE: t.ENGINE,
+        CREATED: t.CREATE_TIME ?? "N/A",
+        UPDATED: t.UPDATE_TIME ?? "N/A",
+      }));
+
+      return toolOk(
+        formatAsTable(formatted) + `\n\n${tables.length} table(s) in ${r.db}`
+      );
+    }
+  );
+
+  // ── sample_data ───────────────────────────────────────────────────
+  server.tool(
+    "sample_data",
+    "Get sample rows from a table for quick preview",
+    {
+      connection: z.string().describe("Connection name"),
+      table: z.string().describe("Table name"),
+      database: z.string().optional().describe("Database name"),
+      limit: z
+        .number()
+        .min(1)
+        .max(100)
+        .optional()
+        .describe("Number of rows to return (default: 5, max: 100)"),
+    },
+    async ({ connection, table, database, limit }) => {
+      const r = resolveDb(connection, database);
+      if ("error" in r) return r.error;
+      const pool = getPool(connection);
+      const qt = qualifiedTable(r.db, table);
+      const n = limit ?? 5;
+
+      const [rows] = await pool.query(`SELECT * FROM ${qt} LIMIT ${n}`);
+      const data = rows as Array<Record<string, unknown>>;
+
+      if (data.length === 0) return toolOk(`Table ${table} is empty`);
+
+      return toolOk(
+        formatAsTable(data) + `\n\n${data.length} row(s) from ${table}`
+      );
+    }
+  );
+}

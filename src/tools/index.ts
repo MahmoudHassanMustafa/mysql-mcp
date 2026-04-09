@@ -1,0 +1,16 @@
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerConnectionTools } from "./connection-tools.js";
+import { registerSchemaTools } from "./schema-tools.js";
+import { registerQueryTools } from "./query-tools.js";
+import { registerDataTools } from "./data-tools.js";
+import { registerRoutinesTools } from "./routines-tools.js";
+import { registerErdTool } from "./erd-tool.js";
+
+export function registerTools(server: McpServer) {
+  registerConnectionTools(server);
+  registerSchemaTools(server);
+  registerQueryTools(server);
+  registerDataTools(server);
+  registerRoutinesTools(server);
+  registerErdTool(server);
+}

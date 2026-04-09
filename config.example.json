@@ -1,0 +1,55 @@
+{
+  "connections": [
+    {
+      "name": "local",
+      "host": "127.0.0.1",
+      "port": 3306,
+      "user": "root",
+      "password": "secret",
+      "database": "myapp",
+      "readonly": true,
+      "queryTimeout": 30000
+    },
+    {
+      "name": "staging-ssh",
+      "host": "10.0.1.50",
+      "port": 3306,
+      "user": "deploy",
+      "password": "secret",
+      "database": "myapp_staging",
+      "readonly": true,
+      "ssh": {
+        "host": "bastion.example.com",
+        "port": 22,
+        "username": "deploy",
+        "privateKeyPath": "~/.ssh/id_rsa"
+      }
+    },
+    {
+      "name": "production-ssl",
+      "host": "rds-prod.example.com",
+      "port": 3306,
+      "user": "readonly_user",
+      "password": "secret",
+      "database": "myapp_prod",
+      "readonly": true,
+      "queryTimeout": 15000,
+      "ssl": true
+    },
+    {
+      "name": "production-ssl-certs",
+      "host": "mysql.internal",
+      "port": 3306,
+      "user": "app",
+      "password": "secret",
+      "database": "prod",
+      "readonly": true,
+      "ssl": {
+        "ca": "~/.ssl/ca.pem",
+        "cert": "~/.ssl/client-cert.pem",
+        "key": "~/.ssl/client-key.pem",
+        "rejectUnauthorized": true
+      }
+    }
+  ]
+}

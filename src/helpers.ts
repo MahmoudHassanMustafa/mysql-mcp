@@ -1,0 +1,129 @@
+import { homedir } from "node:os";
+import { getPool, getConnectionConfig } from "./connection.js";
+import type { Pool } from "mysql2/promise";
+
+// ── Path utilities ──────────────────────────────────────────────────
+
+export function expandTilde(p: string): string {
+  if (p.startsWith("~/") || p === "~") {
+    return p.replace("~", homedir());
+  }
+  return p;
+}
+
+// ── SQL identifier escaping ─────────────────────────────────────────
+
+export function escapeId(name: string): string {
+  return `\`${name.replace(/`/g, "``")}\``;
+}
+
+export function qualifiedTable(db: string, table: string): string {
+  return `${escapeId(db)}.${escapeId(table)}`;
+}
+
+// ── Database resolution ─────────────────────────────────────────────
+
+export function resolveDb(
+  connection: string,
+  database?: string
+): { db: string } | { error: ReturnType<typeof toolError> } {
+  const db = database || getConnectionConfig(connection).database;
+  if (!db) {
+    return {
+      error: toolError(
+        "No database selected.",
+        "Specify a database parameter or use use_database first."
+      ),
+    };
+  }
+  return { db };
+}
+
+// ── Query with USE + connection management ──────────────────────────
+
+export async function queryWithDb(
+  pool: Pool,
+  connection: string,
+  sql: string,
+  params: (string | number | boolean | null)[] = []
+): Promise<[unknown, unknown]> {
+  const db = getConnectionConfig(connection).database;
+  const conn = await pool.getConnection();
+  try {
+    if (db) {
+      await conn.query(`USE ${escapeId(db)}`);
+    }
+    const result = await conn.execute(sql, params);
+    return result as [unknown, unknown];
+  } finally {
+    conn.release();
+  }
+}
+
+// ── Tool response helpers ───────────────────────────────────────────
+
+export function toolOk(text: string) {
+  return { content: [{ type: "text" as const, text }] };
+}
+
+export function toolError(message: string, hint?: string) {
+  const parts = [message];
+  if (hint) parts.push(`Hint: ${hint}`);
+  return {
+    content: [{ type: "text" as const, text: parts.join("\n") }],
+    isError: true as const,
+  };
+}
+
+// ── Table formatting ────────────────────────────────────────────────
+
+const MAX_COL_WIDTH = 60;
+
+export function formatAsTable(
+  rows: Record<string, unknown>[],
+  opts?: { maxWidth?: number }
+): string {
+  if (rows.length === 0) return "(empty)";
+
+  const maxW = opts?.maxWidth ?? MAX_COL_WIDTH;
+  const keys = Object.keys(rows[0]);
+
+  const truncate = (val: unknown): string => {
+    const s = String(val ?? "NULL");
+    if (s.length <= maxW) return s;
+    return s.slice(0, maxW - 3) + "...";
+  };
+
+  const widths = keys.map((k) =>
+    Math.min(
+      maxW,
+      Math.max(k.length, ...rows.map((r) => truncate(r[k]).length))
+    )
+  );
+
+  const header = keys.map((k, i) => k.padEnd(widths[i])).join(" | ");
+  const separator = widths.map((w) => "-".repeat(w)).join("-+-");
+  const body = rows.map((row) =>
+    keys
+      .map((k, i) => truncate(row[k]).padEnd(widths[i]))
+      .join(" | ")
+  );
+
+  return [header, separator, ...body].join("\n");
+}
+
+// ── Human-readable sizes ────────────────────────────────────────────
+
+export function humanSize(bytes: number | null | undefined): string {
+  if (bytes == null) return "N/A";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024)
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+// ── Write pattern for readonly checks ───────────────────────────────
+
+export const WRITE_PATTERN =
+  /^\s*(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|REPLACE|RENAME|GRANT|REVOKE|LOCK|UNLOCK)\b/i;

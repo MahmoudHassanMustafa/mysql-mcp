@@ -1,6 +1,5 @@
 import { homedir } from "node:os";
-import { getPool, getConnectionConfig } from "./connection.js";
-import type { Pool } from "mysql2/promise";
+import { getConnectionConfig } from "./connection.js";
 
 // ── Path utilities ──────────────────────────────────────────────────
 
@@ -14,6 +13,9 @@ export function expandTilde(p: string): string {
 // ── SQL identifier escaping ─────────────────────────────────────────
 
 export function escapeId(name: string): string {
+  if (name.includes("\0") || name.length > 64 || name.length === 0) {
+    throw new Error(`Invalid identifier: "${name.substring(0, 20)}"`);
+  }
   return `\`${name.replace(/`/g, "``")}\``;
 }
 
@@ -39,26 +41,6 @@ export function resolveDb(
   return { db };
 }
 
-// ── Query with USE + connection management ──────────────────────────
-
-export async function queryWithDb(
-  pool: Pool,
-  connection: string,
-  sql: string,
-  params: (string | number | boolean | null)[] = []
-): Promise<[unknown, unknown]> {
-  const db = getConnectionConfig(connection).database;
-  const conn = await pool.getConnection();
-  try {
-    if (db) {
-      await conn.query(`USE ${escapeId(db)}`);
-    }
-    const result = await conn.execute(sql, params);
-    return result as [unknown, unknown];
-  } finally {
-    conn.release();
-  }
-}
 
 // ── Tool response helpers ───────────────────────────────────────────
 
@@ -123,7 +105,28 @@ export function humanSize(bytes: number | null | undefined): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-// ── Write pattern for readonly checks ───────────────────────────────
+// ── Read-only query safety ───────────────────────────────────────────
 
-export const WRITE_PATTERN =
-  /^\s*(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|REPLACE|RENAME|GRANT|REVOKE|LOCK|UNLOCK)\b/i;
+/**
+ * Strip SQL comments so they can't be used to bypass read-only checks.
+ * Handles block comments, line comments (-- and #).
+ */
+export function stripSQLComments(sql: string): string {
+  return sql
+    .replace(/\/\*[\s\S]*?\*\//g, " ")  // block comments
+    .replace(/--[^\n]*/g, " ")           // -- line comments
+    .replace(/#[^\n]*/g, " ")            // # line comments
+    .trim();
+}
+
+/**
+ * Whitelist approach: only allow known safe read-only statements.
+ * Returns true if the query is safe for read-only connections.
+ */
+const READONLY_ALLOWED =
+  /^(SELECT|SHOW|DESCRIBE|DESC|EXPLAIN|USE|WITH\b[\s\S]*?\bSELECT)\b/i;
+
+export function isReadOnlyQuery(sql: string): boolean {
+  const normalized = stripSQLComments(sql);
+  return READONLY_ALLOWED.test(normalized);
+}

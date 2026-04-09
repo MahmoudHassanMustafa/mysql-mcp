@@ -41,6 +41,7 @@ export async function initConnection(config: DatabaseConfig): Promise<void> {
     connectionLimit: 5,
     queueLimit: 10,
     connectTimeout: 10000,
+    multipleStatements: false,
   };
 
   // SSL/TLS support
@@ -49,6 +50,11 @@ export async function initConnection(config: DatabaseConfig): Promise<void> {
       poolOpts.ssl = {};
     } else {
       const sslCfg = config.ssl as SSLConfig;
+      if (sslCfg.rejectUnauthorized === false) {
+        console.error(
+          `[mysql-mcp] SECURITY WARNING: SSL certificate validation is DISABLED for "${config.name}". Vulnerable to MITM.`
+        );
+      }
       poolOpts.ssl = {
         ca: sslCfg.ca ? readFileSync(sslCfg.ca) : undefined,
         cert: sslCfg.cert ? readFileSync(sslCfg.cert) : undefined,
@@ -127,6 +133,10 @@ function setupSSHTunnel(config: DatabaseConfig): Promise<TunnelResult> {
   return new Promise((resolve, reject) => {
     const ssh = config.ssh!;
     const client = new SSHClient();
+
+    console.error(
+      `[mysql-mcp] WARNING: SSH host key verification is not enforced for ${ssh.host}. Connection may be vulnerable to MITM.`
+    );
 
     const sshConfig: ConnectConfig = {
       host: ssh.host,

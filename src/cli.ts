@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, chmodSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { createInterface } from "node:readline";
 import { Client as SSHClient } from "ssh2";
@@ -26,7 +26,12 @@ function loadConfig(path: string): AppConfig {
 }
 
 function saveConfig(path: string, config: AppConfig): void {
-  writeFileSync(path, JSON.stringify(config, null, 2) + "\n", "utf-8");
+  writeFileSync(path, JSON.stringify(config, null, 2) + "\n", {
+    encoding: "utf-8",
+    mode: 0o600,
+  });
+  // Also fix perms if file already existed with wrong mode
+  chmodSync(path, 0o600);
 }
 
 // ── Readline helper ─────────────────────────────────────────────────

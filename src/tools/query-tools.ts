@@ -1,14 +1,16 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getPool, getConnectionConfig } from "../connection.js";
+import { getPool, getConnectionConfig, getQueryTimeout } from "../connection.js";
 import {
   escapeId,
   formatAsTable,
   toolOk,
   toolError,
-  WRITE_PATTERN,
-  queryWithDb,
+  isReadOnlyQuery,
+  stripSQLComments,
 } from "../helpers.js";
+
+const MAX_RESULT_ROWS = 1000;
 
 export function registerQueryTools(server: McpServer) {
   // ── execute_query ─────────────────────────────────────────────────
@@ -26,76 +28,109 @@ export function registerQueryTools(server: McpServer) {
     async ({ connection, query, params }) => {
       const config = getConnectionConfig(connection);
 
-      if (config.readonly !== false && WRITE_PATTERN.test(query)) {
+      // Whitelist approach: on read-only connections, only allow safe statements
+      if (config.readonly !== false && !isReadOnlyQuery(query)) {
         return toolError(
-          `Connection "${connection}" is read-only. Write operations are not allowed.`,
+          `Connection "${connection}" is read-only. Only SELECT, SHOW, DESCRIBE, EXPLAIN, and USE are allowed.`,
           'Set "readonly": false in the connection config to enable writes.'
         );
       }
 
       const pool = getPool(connection);
-      const [rows, fields] = await queryWithDb(
-        pool,
-        connection,
-        query,
-        params ?? []
-      );
-      const startTime = Date.now();
-      const elapsed = Date.now() - startTime;
+      const db = config.database;
+      const timeout = getQueryTimeout(connection);
+      const conn = await pool.getConnection();
 
-      if (Array.isArray(rows) && rows.length > 0 && fields) {
-        const limited = (rows as Record<string, unknown>[]).slice(0, 500);
+      try {
+        if (db) {
+          await conn.query(`USE ${escapeId(db)}`);
+        }
+
+        // Auto-append LIMIT to unbounded SELECT to prevent OOM
+        let boundedQuery = query;
+        const normalized = stripSQLComments(query);
+        if (/^\s*SELECT\b/i.test(normalized) && !/\bLIMIT\b/i.test(normalized)) {
+          boundedQuery = `${query} LIMIT ${MAX_RESULT_ROWS}`;
+        }
+
+        const startTime = Date.now();
+        const [rows, fields] = await conn.execute({
+          sql: boundedQuery,
+          timeout,
+        }, params ?? []);
+        const elapsed = Date.now() - startTime;
+
+        if (Array.isArray(rows) && rows.length > 0 && fields) {
+          const limited = (rows as Record<string, unknown>[]).slice(0, 500);
+          const text = [
+            formatAsTable(limited),
+            "",
+            `${(rows as unknown[]).length} row(s) returned in ${elapsed}ms${(rows as unknown[]).length > 500 ? " (showing first 500)" : ""}`,
+          ].join("\n");
+          return toolOk(text);
+        }
+
+        const result = rows as unknown as Record<string, unknown>;
         const text = [
-          formatAsTable(limited),
-          "",
-          `${(rows as unknown[]).length} row(s) returned${(rows as unknown[]).length > 500 ? " (showing first 500)" : ""}`,
-        ].join("\n");
+          `Query executed in ${elapsed}ms`,
+          result.affectedRows !== undefined
+            ? `Affected rows: ${result.affectedRows}`
+            : null,
+          result.insertId ? `Insert ID: ${result.insertId}` : null,
+          result.changedRows !== undefined
+            ? `Changed rows: ${result.changedRows}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join("\n");
+
         return toolOk(text);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return toolError(`Query failed: ${sanitizeErrorMessage(msg)}`);
+      } finally {
+        conn.release();
       }
-
-      const result = rows as any;
-      const text = [
-        "Query executed successfully",
-        result.affectedRows !== undefined
-          ? `Affected rows: ${result.affectedRows}`
-          : null,
-        result.insertId ? `Insert ID: ${result.insertId}` : null,
-        result.changedRows !== undefined
-          ? `Changed rows: ${result.changedRows}`
-          : null,
-      ]
-        .filter(Boolean)
-        .join("\n");
-
-      return toolOk(text);
     }
   );
 
   // ── explain_query ─────────────────────────────────────────────────
   server.tool(
     "explain_query",
-    "Run EXPLAIN on a query to show the execution plan",
+    "Run EXPLAIN on a SELECT query to show the execution plan",
     {
       connection: z.string().describe("Connection name"),
-      query: z.string().describe("SQL query to analyze"),
+      query: z.string().describe("SELECT query to analyze"),
       format: z
         .enum(["TRADITIONAL", "JSON", "TREE"])
         .optional()
         .describe("Output format (default: JSON for richest detail)"),
     },
     async ({ connection, query, format }) => {
+      // Only allow EXPLAIN on SELECT queries
+      const normalized = stripSQLComments(query);
+      if (!/^\s*(SELECT|WITH)\b/i.test(normalized)) {
+        return toolError(
+          "EXPLAIN is restricted to SELECT queries for safety.",
+          "Provide a SELECT statement to analyze."
+        );
+      }
+
       const pool = getPool(connection);
       const fmt = format ?? "JSON";
-      const explainSql =
-        fmt === "TRADITIONAL"
-          ? `EXPLAIN ${query}`
-          : `EXPLAIN FORMAT=${fmt} ${query}`;
-
+      const timeout = getQueryTimeout(connection);
       const db = getConnectionConfig(connection).database;
       const conn = await pool.getConnection();
+
       try {
         if (db) await conn.query(`USE ${escapeId(db)}`);
-        const [rows] = await conn.execute(explainSql);
+
+        const explainSql =
+          fmt === "TRADITIONAL"
+            ? `EXPLAIN ${query}`
+            : `EXPLAIN FORMAT=${fmt} ${query}`;
+
+        const [rows] = await conn.execute({ sql: explainSql, timeout });
         const resultRows = rows as Array<Record<string, unknown>>;
 
         if (fmt === "JSON" && resultRows[0]?.EXPLAIN) {
@@ -111,9 +146,19 @@ export function registerQueryTools(server: McpServer) {
         }
 
         return toolOk(formatAsTable(resultRows));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return toolError(`EXPLAIN failed: ${sanitizeErrorMessage(msg)}`);
       } finally {
         conn.release();
       }
     }
   );
+}
+
+/** Strip internal IPs, usernames, and hostnames from MySQL error messages */
+function sanitizeErrorMessage(msg: string): string {
+  return msg
+    .replace(/'[^']*'@'[^']*'/g, "'***'@'***'")  // user@host patterns
+    .replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, "***");  // IP addresses
 }

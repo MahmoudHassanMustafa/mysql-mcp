@@ -12,7 +12,9 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "cli": "node dist/cli.js",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
@@ -23,7 +25,8 @@
   "devDependencies": {
     "@types/node": "^22.15.3",
     "@types/ssh2": "^1.15.4",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.4"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

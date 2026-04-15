@@ -2,7 +2,6 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getPool, getConnectionConfig } from "../connection.js";
 import {
-  escapeId,
   qualifiedTable,
   resolveDb,
   formatAsTable,

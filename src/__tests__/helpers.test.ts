@@ -355,7 +355,7 @@ describe("toolHandler", () => {
     );
     const res = await wrapped({});
     expect(res.content[0].text).toBe("precondition failed");
-    expect(res.isError).toBe(true);
+    expect("isError" in res && res.isError).toBe(true);
     expect(stderrSpy).not.toHaveBeenCalled();
   });
 
@@ -364,7 +364,7 @@ describe("toolHandler", () => {
       throw new Error("Access denied for user 'root'@'10.1.2.3'");
     });
     const res = await wrapped({ connection: "prod" });
-    expect(res.isError).toBe(true);
+    expect("isError" in res && res.isError).toBe(true);
     expect(res.content[0].text).toBe(
       "my_tool failed: Access denied for user '***'@'***'"
     );
@@ -381,7 +381,7 @@ describe("toolHandler", () => {
       throw "plain string";
     });
     const res = await wrapped({});
-    expect(res.isError).toBe(true);
+    expect("isError" in res && res.isError).toBe(true);
     expect(res.content[0].text).toBe("demo failed: plain string");
   });
 
@@ -390,7 +390,7 @@ describe("toolHandler", () => {
       throw new Error("nope");
     });
     const res = await wrapped({});
-    expect(res.isError).toBe(true);
+    expect("isError" in res && res.isError).toBe(true);
     const logged = stderrSpy.mock.calls[0][0] as string;
     // undefined connection is skipped by JSON.stringify
     expect(logged).not.toContain('"connection"');

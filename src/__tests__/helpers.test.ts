@@ -144,6 +144,44 @@ describe("formatAsTable", () => {
     expect(result).toContain("...");
     expect(result).not.toContain("a".repeat(100));
   });
+
+  it("renders JSON-column objects as JSON, not [object Object]", () => {
+    const result = formatAsTable(
+      [{ services: { web: true, db: "postgres" } }],
+      { maxWidth: 100 }
+    );
+    expect(result).not.toContain("[object Object]");
+    expect(result).toContain('{"web":true,"db":"postgres"}');
+  });
+
+  it("renders JSON-column arrays with structure preserved", () => {
+    const result = formatAsTable(
+      [{ tags: ["a", "b", "c"] }],
+      { maxWidth: 100 }
+    );
+    expect(result).toContain('["a","b","c"]');
+  });
+
+  it("leaves Date values stringifying as before (not JSON-quoted)", () => {
+    const d = new Date("2026-04-15T10:00:00Z");
+    const result = formatAsTable([{ ts: d }], { maxWidth: 200 });
+    expect(result).toContain(String(d));
+    expect(result).not.toContain(`"${d.toISOString()}"`);
+  });
+
+  it("does not dump Buffer/BLOB columns as JSON byte arrays", () => {
+    const buf = Buffer.from("hello");
+    const result = formatAsTable([{ blob: buf }], { maxWidth: 100 });
+    expect(result).not.toContain('"type":"Buffer"');
+  });
+
+  it("falls back safely on circular objects", () => {
+    const obj: Record<string, unknown> = { a: 1 };
+    obj.self = obj;
+    expect(() =>
+      formatAsTable([{ col: obj }], { maxWidth: 100 })
+    ).not.toThrow();
+  });
 });
 
 // ── humanSize ───────────────────────────────────────────────────────

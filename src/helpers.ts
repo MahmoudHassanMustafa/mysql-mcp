@@ -76,7 +76,24 @@ export function formatAsTable(
   const keys = Object.keys(rows[0]);
 
   const truncate = (val: unknown): string => {
-    const s = String(val ?? "NULL");
+    if (val == null) return "NULL";
+    let s: string;
+    // mysql2 returns JSON columns as parsed objects/arrays; String(obj) gives
+    // "[object Object]". JSON.stringify preserves structure. Date and
+    // Uint8Array (Buffer/BLOB) are objects too but already stringify sensibly.
+    if (
+      typeof val === "object" &&
+      !(val instanceof Date) &&
+      !(val instanceof Uint8Array)
+    ) {
+      try {
+        s = JSON.stringify(val);
+      } catch {
+        s = String(val);
+      }
+    } else {
+      s = String(val);
+    }
     if (s.length <= maxW) return s;
     return s.slice(0, maxW - 3) + "...";
   };

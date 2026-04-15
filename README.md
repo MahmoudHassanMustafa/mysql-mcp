@@ -1,5 +1,7 @@
 # mysql-mcp
 
+[![CI](https://github.com/MahmoudHassanMustafa/mysql-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/MahmoudHassanMustafa/mysql-mcp/actions/workflows/ci.yml)
+
 A Model Context Protocol (MCP) server that connects Claude Code to MySQL databases. Supports SSH tunnels, SSL/TLS, and multiple simultaneous connections.
 
 ## Features

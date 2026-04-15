@@ -11,7 +11,9 @@ import {
   stripSQLComments,
   sanitizeErrorMessage,
   log,
+  buildHostVerifier,
 } from "../helpers.js";
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 
 // ── expandTilde ─────────────────────────────────────────────────────
@@ -172,10 +174,44 @@ describe("formatAsTable", () => {
     expect(result).not.toContain(`"${d.toISOString()}"`);
   });
 
-  it("does not dump Buffer/BLOB columns as JSON byte arrays", () => {
+  it("renders Buffer/BLOB columns as size metadata, not raw bytes", () => {
     const buf = Buffer.from("hello");
     const result = formatAsTable([{ blob: buf }], { maxWidth: 100 });
     expect(result).not.toContain('"type":"Buffer"');
+    expect(result).toContain("<Buffer 5 bytes>");
+  });
+
+  it("renders Uint8Array the same as Buffer", () => {
+    const arr = new Uint8Array([1, 2, 3, 4, 5, 6, 7]);
+    const result = formatAsTable([{ blob: arr }], { maxWidth: 100 });
+    expect(result).toContain("<Buffer 7 bytes>");
+  });
+
+  it("does not decode binary BLOBs as UTF-8 garbage", () => {
+    const binary = Buffer.from([0xff, 0xfe, 0xfd, 0x00, 0x01]);
+    const result = formatAsTable([{ blob: binary }], { maxWidth: 100 });
+    expect(result).toContain("<Buffer 5 bytes>");
+    // the raw bytes should not appear verbatim
+    expect(result).not.toContain(binary.toString("utf8"));
+  });
+
+  it("enforces a byte cap and appends a truncation note", () => {
+    // 200 rows × ~80 bytes/row ≈ 16KB raw; cap at 4KB should truncate
+    const rows = Array.from({ length: 200 }, (_, i) => ({
+      id: i,
+      data: "x".repeat(60),
+    }));
+    const result = formatAsTable(rows, { maxWidth: 100, maxBytes: 4 * 1024 });
+    expect(result).toContain("(truncated");
+    expect(result).toContain("row(s) omitted");
+    // result should be close to the cap, not the full ~16KB
+    expect(Buffer.byteLength(result, "utf8")).toBeLessThan(5 * 1024);
+  });
+
+  it("does not truncate when output fits under the cap", () => {
+    const rows = [{ id: 1, name: "alice" }];
+    const result = formatAsTable(rows, { maxBytes: 1024 });
+    expect(result).not.toContain("(truncated");
   });
 
   it("falls back safely on circular objects", () => {
@@ -394,5 +430,54 @@ describe("toolHandler", () => {
     const logged = stderrSpy.mock.calls[0][0] as string;
     // undefined connection is skipped by JSON.stringify
     expect(logged).not.toContain('"connection"');
+  });
+});
+
+// ── buildHostVerifier ───────────────────────────────────────────────
+
+describe("buildHostVerifier", () => {
+  // A fixed "host key" buffer and its precomputed SHA256 base64 fingerprint
+  const hostKey = Buffer.from("fake-ssh-host-key-for-testing");
+  const correctFp = createHash("sha256")
+    .update(hostKey)
+    .digest("base64")
+    .replace(/=+$/, "");
+
+  it("returns undefined when no fingerprint is provided", () => {
+    expect(buildHostVerifier(undefined)).toBeUndefined();
+    expect(buildHostVerifier("")).toBeUndefined();
+  });
+
+  it("accepts a matching fingerprint", () => {
+    const verify = buildHostVerifier(correctFp);
+    expect(verify).toBeDefined();
+    expect(verify!(hostKey)).toBe(true);
+  });
+
+  it("accepts fingerprint with SHA256: prefix", () => {
+    const verify = buildHostVerifier(`SHA256:${correctFp}`);
+    expect(verify!(hostKey)).toBe(true);
+  });
+
+  it("tolerates base64 padding on the configured fingerprint", () => {
+    const verify = buildHostVerifier(`SHA256:${correctFp}==`);
+    expect(verify!(hostKey)).toBe(true);
+  });
+
+  it("rejects a mismatched fingerprint", () => {
+    const verify = buildHostVerifier(correctFp);
+    const tamperedKey = Buffer.from("different-key-entirely");
+    expect(verify!(tamperedKey)).toBe(false);
+  });
+
+  it("rejects a malformed fingerprint without throwing", () => {
+    const verify = buildHostVerifier("not-a-real-fingerprint");
+    expect(verify!(hostKey)).toBe(false);
+  });
+
+  it("rejects when fingerprint length doesn't match hash length", () => {
+    // Short fingerprint — can't possibly be a real SHA256
+    const verify = buildHostVerifier("abc");
+    expect(verify!(hostKey)).toBe(false);
   });
 });

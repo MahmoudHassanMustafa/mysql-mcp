@@ -1,4 +1,5 @@
 import { homedir } from "node:os";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { getConnectionConfig } from "./connection.js";
 
 // ── Path utilities ──────────────────────────────────────────────────
@@ -64,6 +65,39 @@ export function log(
   console.error(`[mysql-mcp] ${level.toUpperCase()} ${msg}${suffix}`);
 }
 
+// ── SSH host key verification ───────────────────────────────────────
+
+/**
+ * Build an ssh2 hostVerifier callback that enforces the given SHA256
+ * fingerprint. Returns undefined when no fingerprint is configured —
+ * callers should treat undefined as "no verification, warn the operator".
+ *
+ * Expected input format is what `ssh-keygen -lf <pubkey>` produces:
+ *   "SHA256:abc123...base64..."
+ * The "SHA256:" prefix is optional; trailing "=" padding is tolerated
+ * on either side.
+ */
+export function buildHostVerifier(
+  expected: string | undefined
+): ((key: Buffer) => boolean) | undefined {
+  if (!expected) return undefined;
+  // Normalize: strip optional "SHA256:" prefix and any base64 padding
+  const normalized = expected.replace(/^SHA256:/i, "").replace(/=+$/, "").trim();
+  return (key: Buffer) => {
+    const actual = createHash("sha256")
+      .update(key)
+      .digest("base64")
+      .replace(/=+$/, "");
+    const a = Buffer.from(actual);
+    const b = Buffer.from(normalized);
+    // timingSafeEqual requires equal-length buffers. Length mismatch is
+    // a hard reject — it means the fingerprint format is wrong or the
+    // server key is different.
+    if (a.length !== b.length) return false;
+    return timingSafeEqual(a, b);
+  };
+}
+
 // ── Error sanitization ──────────────────────────────────────────────
 
 /**
@@ -125,27 +159,34 @@ export function toolHandler<A extends Record<string, unknown>>(
 // ── Table formatting ────────────────────────────────────────────────
 
 const MAX_COL_WIDTH = 60;
+// Hard cap on total formatted output. 500 wide rows with TEXT/JSON/BLOB
+// columns can run into the multi-MB range, which has been observed to
+// provoke 500-class errors from the Anthropic API rather than a clean
+// context-size refusal. 256KB is well under any practical token budget
+// while still returning meaningful tables.
+const MAX_OUTPUT_BYTES = 256 * 1024;
 
 export function formatAsTable(
   rows: Record<string, unknown>[],
-  opts?: { maxWidth?: number }
+  opts?: { maxWidth?: number; maxBytes?: number }
 ): string {
   if (rows.length === 0) return "(empty)";
 
   const maxW = opts?.maxWidth ?? MAX_COL_WIDTH;
+  const maxBytes = opts?.maxBytes ?? MAX_OUTPUT_BYTES;
   const keys = Object.keys(rows[0]);
 
   const truncate = (val: unknown): string => {
     if (val == null) return "NULL";
     let s: string;
-    // mysql2 returns JSON columns as parsed objects/arrays; String(obj) gives
-    // "[object Object]". JSON.stringify preserves structure. Date and
-    // Uint8Array (Buffer/BLOB) are objects too but already stringify sensibly.
-    if (
-      typeof val === "object" &&
-      !(val instanceof Date) &&
-      !(val instanceof Uint8Array)
-    ) {
+    // BLOB / BINARY columns come back as Buffer (Uint8Array). Rendering
+    // them as raw bytes either pollutes the output with garbage UTF-8
+    // or balloons the payload. Show size-only metadata.
+    if (val instanceof Uint8Array) {
+      s = `<Buffer ${val.length} bytes>`;
+    } else if (typeof val === "object" && !(val instanceof Date)) {
+      // mysql2 returns JSON columns as parsed objects/arrays; String(obj)
+      // gives "[object Object]". JSON.stringify preserves structure.
       try {
         s = JSON.stringify(val);
       } catch {
@@ -167,13 +208,37 @@ export function formatAsTable(
 
   const header = keys.map((k, i) => k.padEnd(widths[i])).join(" | ");
   const separator = widths.map((w) => "-".repeat(w)).join("-+-");
-  const body = rows.map((row) =>
-    keys
-      .map((k, i) => truncate(row[k]).padEnd(widths[i]))
-      .join(" | ")
-  );
 
-  return [header, separator, ...body].join("\n");
+  // Build rows incrementally and stop once we'd exceed the byte budget.
+  // Prevents any single over-wide table from tanking the upstream request.
+  const body: string[] = [];
+  let bytesUsed =
+    Buffer.byteLength(header, "utf8") +
+    1 +
+    Buffer.byteLength(separator, "utf8") +
+    1;
+  let omitted = 0;
+  for (const row of rows) {
+    const line = keys
+      .map((k, i) => truncate(row[k]).padEnd(widths[i]))
+      .join(" | ");
+    const lineBytes = Buffer.byteLength(line, "utf8") + 1;
+    if (bytesUsed + lineBytes > maxBytes) {
+      omitted = rows.length - body.length;
+      break;
+    }
+    body.push(line);
+    bytesUsed += lineBytes;
+  }
+
+  const out = [header, separator, ...body].join("\n");
+  if (omitted > 0) {
+    return (
+      out +
+      `\n... (truncated — ${omitted} more row(s) omitted to keep output under ${Math.floor(maxBytes / 1024)}KB)`
+    );
+  }
+  return out;
 }
 
 // ── Human-readable sizes ────────────────────────────────────────────

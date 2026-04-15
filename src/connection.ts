@@ -5,7 +5,7 @@ import type { Pool, PoolConnection } from "mysql2/promise";
 import type { DatabaseConfig, SSLConfig } from "./types.js";
 import type { ConnectConfig } from "ssh2";
 import net from "node:net";
-import { log } from "./helpers.js";
+import { log, buildHostVerifier } from "./helpers.js";
 
 interface ManagedConnection {
   config: DatabaseConfig;
@@ -145,18 +145,27 @@ function setupSSHTunnel(config: DatabaseConfig): Promise<TunnelResult> {
   return new Promise((resolve, reject) => {
     const ssh = config.ssh!;
     const client = new SSHClient();
+    const hostVerifier = buildHostVerifier(ssh.hostFingerprint);
 
-    log(
-      "warn",
-      "SSH host key verification is not enforced; tunnel may be vulnerable to MITM",
-      { connection: config.name, sshHost: ssh.host }
-    );
+    if (hostVerifier) {
+      log("info", "SSH host fingerprint verification enabled", {
+        connection: config.name,
+        sshHost: ssh.host,
+      });
+    } else {
+      log(
+        "warn",
+        "SSH host key verification not enforced; set ssh.hostFingerprint to prevent MITM",
+        { connection: config.name, sshHost: ssh.host }
+      );
+    }
 
     const sshConfig: ConnectConfig = {
       host: ssh.host,
       port: ssh.port ?? 22,
       username: ssh.username,
       readyTimeout: 10000,
+      ...(hostVerifier ? { hostVerifier } : {}),
     };
 
     if (ssh.privateKeyPath) {

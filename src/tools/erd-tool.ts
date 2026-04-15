@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getPool } from "../connection.js";
-import { resolveDb, toolOk } from "../helpers.js";
+import { resolveDb, toolOk, toolHandler } from "../helpers.js";
 
 export function registerErdTool(server: McpServer) {
   server.tool(
@@ -15,7 +15,7 @@ export function registerErdTool(server: McpServer) {
         .optional()
         .describe("Specific tables to include (omit for all tables)"),
     },
-    async ({ connection, database, tables }) => {
+    toolHandler("generate_erd", async ({ connection, database, tables }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
       const pool = getPool(connection);
@@ -123,7 +123,7 @@ export function registerErdTool(server: McpServer) {
 
       const mermaid = lines.join("\n");
       return toolOk("```mermaid\n" + mermaid + "\n```");
-    }
+    })
   );
 }
 

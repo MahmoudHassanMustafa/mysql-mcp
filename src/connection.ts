@@ -5,6 +5,7 @@ import type { Pool, PoolConnection } from "mysql2/promise";
 import type { DatabaseConfig, SSLConfig } from "./types.js";
 import type { ConnectConfig } from "ssh2";
 import net from "node:net";
+import { log } from "./helpers.js";
 
 interface ManagedConnection {
   config: DatabaseConfig;
@@ -51,8 +52,10 @@ export async function initConnection(config: DatabaseConfig): Promise<void> {
     } else {
       const sslCfg = config.ssl as SSLConfig;
       if (sslCfg.rejectUnauthorized === false) {
-        console.error(
-          `[mysql-mcp] SECURITY WARNING: SSL certificate validation is DISABLED for "${config.name}". Vulnerable to MITM.`
+        log(
+          "warn",
+          "SSL certificate validation is DISABLED; vulnerable to MITM",
+          { connection: config.name }
         );
       }
       poolOpts.ssl = {
@@ -115,8 +118,11 @@ export async function closeAll(): Promise<void> {
   for (const [name, managed] of connections) {
     try {
       await managed.pool.end();
-    } catch {
-      // ignore pool close errors
+    } catch (err) {
+      log("warn", "pool close failed during shutdown", {
+        connection: name,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
     if (managed.localServer) {
       managed.localServer.close();
@@ -140,8 +146,10 @@ function setupSSHTunnel(config: DatabaseConfig): Promise<TunnelResult> {
     const ssh = config.ssh!;
     const client = new SSHClient();
 
-    console.error(
-      `[mysql-mcp] WARNING: SSH host key verification is not enforced for ${ssh.host}. Connection may be vulnerable to MITM.`
+    log(
+      "warn",
+      "SSH host key verification is not enforced; tunnel may be vulnerable to MITM",
+      { connection: config.name, sshHost: ssh.host }
     );
 
     const sshConfig: ConnectConfig = {
@@ -171,12 +179,28 @@ function setupSSHTunnel(config: DatabaseConfig): Promise<TunnelResult> {
           config.port ?? 3306,
           (err, stream) => {
             if (err) {
+              log("warn", "SSH forwardOut failed", {
+                connection: config.name,
+                error: err.message,
+              });
               sock.destroy();
               return;
             }
             sock.pipe(stream).pipe(sock);
-            sock.on("error", () => stream.destroy());
-            stream.on("error", () => sock.destroy());
+            sock.on("error", (e: Error) => {
+              log("warn", "SSH tunnel local socket error", {
+                connection: config.name,
+                error: e.message,
+              });
+              stream.destroy();
+            });
+            stream.on("error", (e: Error) => {
+              log("warn", "SSH tunnel remote stream error", {
+                connection: config.name,
+                error: e.message,
+              });
+              sock.destroy();
+            });
           }
         );
       });

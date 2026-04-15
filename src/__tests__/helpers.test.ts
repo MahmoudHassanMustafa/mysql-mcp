@@ -1,13 +1,16 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   expandTilde,
   escapeId,
   qualifiedTable,
   toolOk,
   toolError,
+  toolHandler,
   formatAsTable,
   humanSize,
   stripSQLComments,
+  sanitizeErrorMessage,
+  log,
 } from "../helpers.js";
 import { homedir } from "node:os";
 
@@ -250,5 +253,146 @@ describe("stripSQLComments", () => {
 
   it("preserves query with no comments", () => {
     expect(stripSQLComments("SELECT * FROM users")).toBe("SELECT * FROM users");
+  });
+});
+
+// ── sanitizeErrorMessage ────────────────────────────────────────────
+
+describe("sanitizeErrorMessage", () => {
+  it("strips user@host patterns", () => {
+    expect(
+      sanitizeErrorMessage("Access denied for user 'app'@'10.0.0.5'")
+    ).toBe("Access denied for user '***'@'***'");
+  });
+
+  it("strips IPv4 addresses", () => {
+    expect(
+      sanitizeErrorMessage("Can't connect to MySQL server on 192.168.1.42")
+    ).toBe("Can't connect to MySQL server on ***");
+  });
+
+  it("strips multiple IPs in one message", () => {
+    expect(sanitizeErrorMessage("tried 10.0.0.1 then 10.0.0.2")).toBe(
+      "tried *** then ***"
+    );
+  });
+
+  it("leaves unrelated text intact", () => {
+    expect(sanitizeErrorMessage("Table 'users' doesn't exist")).toBe(
+      "Table 'users' doesn't exist"
+    );
+  });
+
+  it("is idempotent", () => {
+    const once = sanitizeErrorMessage("user 'a'@'1.2.3.4' failed");
+    expect(sanitizeErrorMessage(once)).toBe(once);
+  });
+});
+
+// ── log ─────────────────────────────────────────────────────────────
+
+describe("log", () => {
+  let stderrSpy: ReturnType<typeof vi.spyOn>;
+  let stdoutSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    stderrSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    stdoutSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    stderrSpy.mockRestore();
+    stdoutSpy.mockRestore();
+  });
+
+  it("writes to stderr, never stdout", () => {
+    log("info", "hello");
+    expect(stderrSpy).toHaveBeenCalledTimes(1);
+    expect(stdoutSpy).not.toHaveBeenCalled();
+  });
+
+  it("formats level in uppercase with prefix", () => {
+    log("warn", "something");
+    expect(stderrSpy).toHaveBeenCalledWith("[mysql-mcp] WARN something");
+  });
+
+  it("appends ctx as JSON when provided", () => {
+    log("error", "boom", { connection: "prod", code: 42 });
+    expect(stderrSpy).toHaveBeenCalledWith(
+      '[mysql-mcp] ERROR boom {"connection":"prod","code":42}'
+    );
+  });
+
+  it("omits suffix when ctx is undefined", () => {
+    log("info", "ready");
+    expect(stderrSpy).toHaveBeenCalledWith("[mysql-mcp] INFO ready");
+  });
+});
+
+// ── toolHandler ─────────────────────────────────────────────────────
+
+describe("toolHandler", () => {
+  let stderrSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    stderrSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    stderrSpy.mockRestore();
+  });
+
+  it("passes through a successful result", async () => {
+    const wrapped = toolHandler("demo", async () => toolOk("fine"));
+    const res = await wrapped({});
+    expect(res.content[0].text).toBe("fine");
+    expect(stderrSpy).not.toHaveBeenCalled();
+  });
+
+  it("passes through an early-returned toolError unchanged", async () => {
+    const wrapped = toolHandler("demo", async () =>
+      toolError("precondition failed")
+    );
+    const res = await wrapped({});
+    expect(res.content[0].text).toBe("precondition failed");
+    expect(res.isError).toBe(true);
+    expect(stderrSpy).not.toHaveBeenCalled();
+  });
+
+  it("catches throws, logs to stderr, returns sanitized toolError", async () => {
+    const wrapped = toolHandler("my_tool", async () => {
+      throw new Error("Access denied for user 'root'@'10.1.2.3'");
+    });
+    const res = await wrapped({ connection: "prod" });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toBe(
+      "my_tool failed: Access denied for user '***'@'***'"
+    );
+    expect(stderrSpy).toHaveBeenCalledTimes(1);
+    const logged = stderrSpy.mock.calls[0][0] as string;
+    // Operator-side log carries the RAW (unsanitized) error
+    expect(logged).toContain("my_tool failed");
+    expect(logged).toContain("'root'@'10.1.2.3'");
+    expect(logged).toContain('"connection":"prod"');
+  });
+
+  it("handles non-Error throws", async () => {
+    const wrapped = toolHandler("demo", async () => {
+      throw "plain string";
+    });
+    const res = await wrapped({});
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toBe("demo failed: plain string");
+  });
+
+  it("tolerates missing connection arg in logged ctx", async () => {
+    const wrapped = toolHandler("demo", async () => {
+      throw new Error("nope");
+    });
+    const res = await wrapped({});
+    expect(res.isError).toBe(true);
+    const logged = stderrSpy.mock.calls[0][0] as string;
+    // undefined connection is skipped by JSON.stringify
+    expect(logged).not.toContain('"connection"');
   });
 });

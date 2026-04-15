@@ -6,6 +6,7 @@ import {
   formatAsTable,
   toolOk,
   toolError,
+  toolHandler,
   isReadOnlyQuery,
   isExplainSafe,
   stripSQLComments,
@@ -26,7 +27,7 @@ export function registerQueryTools(server: McpServer) {
         .optional()
         .describe("Parameterized query values (use ? placeholders in query)"),
     },
-    async ({ connection, query, params }) => {
+    toolHandler("execute_query", async ({ connection, query, params }) => {
       const config = getConnectionConfig(connection);
 
       // Whitelist approach: on read-only connections, only allow safe statements
@@ -88,13 +89,10 @@ export function registerQueryTools(server: McpServer) {
           .join("\n");
 
         return toolOk(text);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return toolError(`Query failed: ${sanitizeErrorMessage(msg)}`);
       } finally {
         conn?.release();
       }
-    }
+    })
   );
 
   // ── explain_query ─────────────────────────────────────────────────
@@ -109,7 +107,7 @@ export function registerQueryTools(server: McpServer) {
         .optional()
         .describe("Output format (default: JSON for richest detail)"),
     },
-    async ({ connection, query, format }) => {
+    toolHandler("explain_query", async ({ connection, query, format }) => {
       // Only allow EXPLAIN on safe SELECT queries (no INTO OUTFILE, no WITH...INSERT)
       if (!isExplainSafe(query)) {
         return toolError(
@@ -150,19 +148,9 @@ export function registerQueryTools(server: McpServer) {
         }
 
         return toolOk(formatAsTable(resultRows));
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return toolError(`EXPLAIN failed: ${sanitizeErrorMessage(msg)}`);
       } finally {
         conn?.release();
       }
-    }
+    })
   );
-}
-
-/** Strip internal IPs, usernames, and hostnames from MySQL error messages */
-function sanitizeErrorMessage(msg: string): string {
-  return msg
-    .replace(/'[^']*'@'[^']*'/g, "'***'@'***'")  // user@host patterns
-    .replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, "***");  // IP addresses
 }

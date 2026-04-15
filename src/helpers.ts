@@ -47,6 +47,36 @@ export function resolveDb(
   return { db };
 }
 
+// ── Logging ─────────────────────────────────────────────────────────
+
+type LogLevel = "info" | "warn" | "error";
+
+/**
+ * Stderr-only logger for operator visibility. Never writes to stdout —
+ * that stream belongs to the MCP JSON-RPC transport.
+ */
+export function log(
+  level: LogLevel,
+  msg: string,
+  ctx?: Record<string, unknown>
+): void {
+  const suffix = ctx ? " " + JSON.stringify(ctx) : "";
+  console.error(`[mysql-mcp] ${level.toUpperCase()} ${msg}${suffix}`);
+}
+
+// ── Error sanitization ──────────────────────────────────────────────
+
+/**
+ * Strip internal IPs, usernames, and hostnames from MySQL error messages
+ * before they're returned to the MCP client (and thus to the LLM).
+ * Operator-side logs should use the raw message, not this.
+ */
+export function sanitizeErrorMessage(msg: string): string {
+  return msg
+    .replace(/'[^']*'@'[^']*'/g, "'***'@'***'") // user@host patterns
+    .replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, "***"); // IPv4
+}
+
 // ── Tool response helpers ───────────────────────────────────────────
 
 export function toolOk(text: string) {
@@ -59,6 +89,36 @@ export function toolError(message: string, hint?: string) {
   return {
     content: [{ type: "text" as const, text: parts.join("\n") }],
     isError: true as const,
+  };
+}
+
+type ToolResult =
+  | ReturnType<typeof toolOk>
+  | ReturnType<typeof toolError>;
+
+/**
+ * Wrap a tool handler with uniform error handling:
+ *   - log the raw error to stderr with tool name + connection context
+ *   - return a sanitized toolError to the client
+ *
+ * Without this, any throw in a tool handler propagates to the MCP SDK
+ * with the original MySQL message — which can include 'user'@'host' and
+ * internal IPs. Wrap every handler that touches the database.
+ */
+export function toolHandler<A extends Record<string, unknown>>(
+  toolName: string,
+  fn: (args: A) => Promise<ToolResult>
+): (args: A) => Promise<ToolResult> {
+  return async (args: A) => {
+    try {
+      return await fn(args);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const connection =
+        typeof args?.connection === "string" ? args.connection : undefined;
+      log("warn", `${toolName} failed`, { connection, error: msg });
+      return toolError(`${toolName} failed: ${sanitizeErrorMessage(msg)}`);
+    }
   };
 }
 

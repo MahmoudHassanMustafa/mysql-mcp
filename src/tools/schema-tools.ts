@@ -7,7 +7,7 @@ import {
   resolveDb,
   formatAsTable,
   toolOk,
-  toolError,
+  toolHandler,
 } from "../helpers.js";
 
 export function registerSchemaTools(server: McpServer) {
@@ -19,7 +19,7 @@ export function registerSchemaTools(server: McpServer) {
       connection: z.string().describe("Connection name"),
       database: z.string().optional().describe("Database name (uses connection default if omitted)"),
     },
-    async ({ connection, database }) => {
+    toolHandler("list_tables", async ({ connection, database }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
       const pool = getPool(connection);
@@ -37,7 +37,7 @@ export function registerSchemaTools(server: McpServer) {
       return toolOk(
         formatAsTable(tables) + `\n\n${tables.length} table(s) in ${r.db}`
       );
-    }
+    })
   );
 
   // ── describe_table ────────────────────────────────────────────────
@@ -49,7 +49,7 @@ export function registerSchemaTools(server: McpServer) {
       table: z.string().describe("Table name"),
       database: z.string().optional().describe("Database name"),
     },
-    async ({ connection, table, database }) => {
+    toolHandler("describe_table", async ({ connection, table, database }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
       const pool = getPool(connection);
@@ -75,7 +75,7 @@ export function registerSchemaTools(server: McpServer) {
       ].join("\n");
 
       return toolOk(output);
-    }
+    })
   );
 
   // ── get_ddl ───────────────────────────────────────────────────────
@@ -87,7 +87,7 @@ export function registerSchemaTools(server: McpServer) {
       table: z.string().describe("Table name"),
       database: z.string().optional().describe("Database name"),
     },
-    async ({ connection, table, database }) => {
+    toolHandler("get_ddl", async ({ connection, table, database }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
       const pool = getPool(connection);
@@ -97,7 +97,7 @@ export function registerSchemaTools(server: McpServer) {
       const ddl =
         (rows as Array<Record<string, string>>)[0]?.["Create Table"] ?? "";
       return toolOk(ddl);
-    }
+    })
   );
 
   // ── get_foreign_keys ──────────────────────────────────────────────
@@ -109,7 +109,7 @@ export function registerSchemaTools(server: McpServer) {
       table: z.string().optional().describe("Table name (omit for all FKs in database)"),
       database: z.string().optional().describe("Database name"),
     },
-    async ({ connection, table, database }) => {
+    toolHandler("get_foreign_keys", async ({ connection, table, database }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
       const pool = getPool(connection);
@@ -150,7 +150,7 @@ export function registerSchemaTools(server: McpServer) {
       );
 
       return toolOk(lines.join("\n") + `\n\n${fks.length} foreign key(s)`);
-    }
+    })
   );
 
   // ── get_indexes ───────────────────────────────────────────────────
@@ -162,7 +162,7 @@ export function registerSchemaTools(server: McpServer) {
       table: z.string().optional().describe("Table name (omit for all indexes in database)"),
       database: z.string().optional().describe("Database name"),
     },
-    async ({ connection, table, database }) => {
+    toolHandler("get_indexes", async ({ connection, table, database }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
       const pool = getPool(connection);
@@ -241,7 +241,7 @@ export function registerSchemaTools(server: McpServer) {
       }
 
       return toolOk(output);
-    }
+    })
   );
 
   // ── search_columns ────────────────────────────────────────────────
@@ -253,7 +253,7 @@ export function registerSchemaTools(server: McpServer) {
       pattern: z.string().describe("Column name pattern (SQL LIKE syntax, e.g. %email%)"),
       database: z.string().optional().describe("Database name"),
     },
-    async ({ connection, pattern, database }) => {
+    toolHandler("search_columns", async ({ connection, pattern, database }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
       const pool = getPool(connection);
@@ -271,6 +271,6 @@ export function registerSchemaTools(server: McpServer) {
       return toolOk(
         formatAsTable(cols) + `\n\n${cols.length} column(s) matching "${pattern}"`
       );
-    }
+    })
   );
 }

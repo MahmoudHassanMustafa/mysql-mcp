@@ -6,6 +6,7 @@ import {
   resolveDb,
   formatAsTable,
   toolOk,
+  toolHandler,
 } from "../helpers.js";
 
 export function registerRoutinesTools(server: McpServer) {
@@ -21,7 +22,7 @@ export function registerRoutinesTools(server: McpServer) {
         .optional()
         .describe("Filter by routine type (default: ALL)"),
     },
-    async ({ connection, database, type }) => {
+    toolHandler("list_routines", async ({ connection, database, type }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
       const pool = getPool(connection);
@@ -58,7 +59,7 @@ export function registerRoutinesTools(server: McpServer) {
         formatAsTable(routines) +
           `\n\n${routines.length} routine(s) in ${r.db}`
       );
-    }
+    })
   );
 
   // ── get_routine_ddl ───────────────────────────────────────────────
@@ -74,7 +75,7 @@ export function registerRoutinesTools(server: McpServer) {
         .optional()
         .describe("Routine type (auto-detected if omitted)"),
     },
-    async ({ connection, name, database, type }) => {
+    toolHandler("get_routine_ddl", async ({ connection, name, database, type }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
       const pool = getPool(connection);
@@ -104,7 +105,7 @@ export function registerRoutinesTools(server: McpServer) {
       const ddl = row?.[ddlKey] ?? "";
 
       return toolOk(`-- ${routineType}: ${name}\n${ddl}`);
-    }
+    })
   );
 
   // ── list_triggers ─────────────────────────────────────────────────
@@ -116,7 +117,7 @@ export function registerRoutinesTools(server: McpServer) {
       table: z.string().optional().describe("Table name (omit for all triggers)"),
       database: z.string().optional().describe("Database name"),
     },
-    async ({ connection, table, database }) => {
+    toolHandler("list_triggers", async ({ connection, table, database }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
       const pool = getPool(connection);
@@ -154,7 +155,7 @@ export function registerRoutinesTools(server: McpServer) {
       return toolOk(
         formatAsTable(triggers) + `\n\n${triggers.length} trigger(s)`
       );
-    }
+    })
   );
 
   // ── get_trigger_ddl ───────────────────────────────────────────────
@@ -166,7 +167,7 @@ export function registerRoutinesTools(server: McpServer) {
       name: z.string().describe("Trigger name"),
       database: z.string().optional().describe("Database name"),
     },
-    async ({ connection, name, database }) => {
+    toolHandler("get_trigger_ddl", async ({ connection, name, database }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
       const pool = getPool(connection);
@@ -177,7 +178,7 @@ export function registerRoutinesTools(server: McpServer) {
       const ddl = row?.["SQL Original Statement"] ?? "";
 
       return toolOk(`-- TRIGGER: ${name}\n${ddl}`);
-    }
+    })
   );
 
   // ── list_events ───────────────────────────────────────────────────
@@ -188,7 +189,7 @@ export function registerRoutinesTools(server: McpServer) {
       connection: z.string().describe("Connection name"),
       database: z.string().optional().describe("Database name"),
     },
-    async ({ connection, database }) => {
+    toolHandler("list_events", async ({ connection, database }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
       const pool = getPool(connection);
@@ -216,7 +217,7 @@ export function registerRoutinesTools(server: McpServer) {
       return toolOk(
         formatAsTable(events) + `\n\n${events.length} event(s)`
       );
-    }
+    })
   );
 
   // ── get_event_ddl ─────────────────────────────────────────────────
@@ -228,7 +229,7 @@ export function registerRoutinesTools(server: McpServer) {
       name: z.string().describe("Event name"),
       database: z.string().optional().describe("Database name"),
     },
-    async ({ connection, name, database }) => {
+    toolHandler("get_event_ddl", async ({ connection, name, database }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
       const pool = getPool(connection);
@@ -239,6 +240,6 @@ export function registerRoutinesTools(server: McpServer) {
       const ddl = row?.["Create Event"] ?? "";
 
       return toolOk(`-- EVENT: ${name}\n${ddl}`);
-    }
+    })
   );
 }

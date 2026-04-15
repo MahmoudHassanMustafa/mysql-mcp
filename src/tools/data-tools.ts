@@ -7,6 +7,7 @@ import {
   formatAsTable,
   humanSize,
   toolOk,
+  toolHandler,
 } from "../helpers.js";
 
 export function registerDataTools(server: McpServer) {
@@ -19,7 +20,7 @@ export function registerDataTools(server: McpServer) {
       database: z.string().optional().describe("Database name"),
       table: z.string().optional().describe("Table name (omit for all tables)"),
     },
-    async ({ connection, database, table }) => {
+    toolHandler("get_table_stats", async ({ connection, database, table }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
       const pool = getPool(connection);
@@ -66,7 +67,7 @@ export function registerDataTools(server: McpServer) {
       return toolOk(
         formatAsTable(formatted) + `\n\n${tables.length} table(s) in ${r.db}`
       );
-    }
+    })
   );
 
   // ── sample_data ───────────────────────────────────────────────────
@@ -84,7 +85,7 @@ export function registerDataTools(server: McpServer) {
         .optional()
         .describe("Number of rows to return (default: 5, max: 100)"),
     },
-    async ({ connection, table, database, limit }) => {
+    toolHandler("sample_data", async ({ connection, table, database, limit }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
       const pool = getPool(connection);
@@ -99,6 +100,6 @@ export function registerDataTools(server: McpServer) {
       return toolOk(
         formatAsTable(data) + `\n\n${data.length} row(s) from ${table}`
       );
-    }
+    })
   );
 }

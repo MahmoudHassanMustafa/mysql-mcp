@@ -7,6 +7,7 @@ import { initConnection, closeAll } from "./connection.js";
 import { registerTools } from "./tools/index.js";
 import { registerResources } from "./resources.js";
 import { registerPrompts } from "./prompts.js";
+import { log } from "./helpers.js";
 
 async function main() {
   const config = loadConfig();
@@ -25,16 +26,16 @@ async function main() {
   for (const conn of config.connections) {
     try {
       await initConnection(conn);
-      console.error(`[mysql-mcp] Connected: ${conn.name}`);
+      log("info", "connected", { connection: conn.name });
     } catch (err) {
-      const msg = `Failed to connect "${conn.name}": ${err instanceof Error ? err.message : err}`;
-      console.error(`[mysql-mcp] ${msg}`);
-      errors.push(msg);
+      const msg = err instanceof Error ? err.message : String(err);
+      log("error", "connection failed", { connection: conn.name, error: msg });
+      errors.push(`Failed to connect "${conn.name}": ${msg}`);
     }
   }
 
   if (errors.length === config.connections.length && config.connections.length > 0) {
-    console.error("[mysql-mcp] All connections failed. Server will start but no queries will work.");
+    log("error", "all connections failed; server will start but no queries will work");
   }
 
   // Graceful shutdown
@@ -48,10 +49,12 @@ async function main() {
   // Start MCP transport
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("[mysql-mcp] Server running on stdio");
+  log("info", "server running on stdio");
 }
 
 main().catch((err) => {
-  console.error("[mysql-mcp] Fatal:", err);
+  log("error", "fatal", {
+    error: err instanceof Error ? err.message : String(err),
+  });
   process.exit(1);
 });

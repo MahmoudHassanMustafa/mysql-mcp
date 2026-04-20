@@ -68,6 +68,7 @@ export function loadConfig(): AppConfig {
         ? expandTilde(process.env.SSH_PRIVATE_KEY_PATH)
         : undefined,
       passphrase: process.env.SSH_PASSPHRASE,
+      hostFingerprint: process.env.SSH_HOST_FINGERPRINT,
     };
   }
 
@@ -157,6 +158,7 @@ function parseSSH(raw: unknown, connIndex: number) {
       ? expandTilde(s.privateKeyPath as string)
       : undefined,
     passphrase: s.passphrase as string | undefined,
+    hostFingerprint: s.hostFingerprint as string | undefined,
   };
 }
 

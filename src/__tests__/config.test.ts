@@ -26,6 +26,7 @@ const envKeys = [
   "SSH_PASSWORD",
   "SSH_PRIVATE_KEY_PATH",
   "SSH_PASSPHRASE",
+  "SSH_HOST_FINGERPRINT",
 ];
 
 beforeEach(() => {
@@ -224,6 +225,39 @@ describe("loadConfig — inline JSON", () => {
     const config = loadConfig();
     expect(config.connections[0].ssh!.privateKeyPath).not.toContain("~");
     expect(config.connections[0].ssh!.privateKeyPath).toContain(".ssh/id_rsa");
+  });
+
+  it("preserves ssh.hostFingerprint through parseSSH", () => {
+    const fp = "SHA256:AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHHIIIIJJJJKKK";
+    process.env.QUERYBRIDGE_MCP_CONFIG_JSON = JSON.stringify({
+      connections: [
+        {
+          name: "t",
+          host: "h",
+          user: "u",
+          ssh: {
+            host: "bastion",
+            username: "deploy",
+            hostFingerprint: fp,
+          },
+        },
+      ],
+    });
+
+    const config = loadConfig();
+    expect(config.connections[0].ssh!.hostFingerprint).toBe(fp);
+  });
+
+  it("reads ssh.hostFingerprint from SSH_HOST_FINGERPRINT env var", () => {
+    const fp = "SHA256:ZZZZYYYYXXXXWWWWVVVVUUUUTTTTSSSSRRRRQQQQPPP";
+    process.env.MYSQL_HOST = "localhost";
+    process.env.MYSQL_USER = "root";
+    process.env.SSH_HOST = "bastion.example.com";
+    process.env.SSH_USER = "deploy";
+    process.env.SSH_HOST_FINGERPRINT = fp;
+
+    const config = loadConfig();
+    expect(config.connections[0].ssh!.hostFingerprint).toBe(fp);
   });
 
   it("parses SSL boolean shorthand", () => {

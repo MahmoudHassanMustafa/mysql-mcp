@@ -170,7 +170,8 @@ Tunnel MySQL traffic through an SSH bastion host. Supports password and private 
     "port": 22,
     "username": "deploy",
     "privateKeyPath": "~/.ssh/id_rsa",
-    "passphrase": "optional"
+    "passphrase": "optional",
+    "hostFingerprint": "SHA256:AAAA...=="
   }
 }
 ```
@@ -183,6 +184,7 @@ Tunnel MySQL traffic through an SSH bastion host. Supports password and private 
 | `password` | string | | SSH password |
 | `privateKeyPath` | string | | Path to private key (supports `~/`) |
 | `passphrase` | string | | Private key passphrase |
+| `hostFingerprint` | string | | Pinned SHA256 fingerprint of the SSH server's host key (format: `ssh-keygen -lf`). When unset, the server logs a warning and accepts any host key. Get it with `ssh-keyscan <host> \| ssh-keygen -lf -`. |
 
 ### SSL/TLS
 

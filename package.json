@@ -1,12 +1,43 @@
 {
-  "name": "mysql-mcp",
-  "version": "1.0.0",
+  "name": "querybridge-mcp",
+  "version": "0.1.0",
   "description": "MCP server connecting Claude Code with MySQL — supports SSH tunnels and multiple databases",
+  "license": "MIT",
+  "author": "Mahmoud Hassan",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MahmoudHassanMustafa/querybridge-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MahmoudHassanMustafa/querybridge-mcp/issues"
+  },
+  "homepage": "https://github.com/MahmoudHassanMustafa/querybridge-mcp#readme",
+  "keywords": [
+    "mcp",
+    "mysql",
+    "claude",
+    "claude-code",
+    "model-context-protocol",
+    "ssh-tunnel",
+    "database"
+  ],
   "type": "module",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "bin": {
-    "mysql-mcp": "dist/cli.js",
-    "mysql-mcp-server": "dist/index.js"
+    "querybridge-mcp": "dist/cli.js",
+    "querybridge-mcp-server": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "scripts": {
     "build": "tsc",
@@ -14,7 +45,8 @@
     "cli": "node dist/cli.js",
     "dev": "tsc --watch",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepublishOnly": "pnpm build && pnpm test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",

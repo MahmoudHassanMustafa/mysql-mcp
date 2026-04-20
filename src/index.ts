@@ -13,7 +13,7 @@ async function main() {
   const config = loadConfig();
 
   const server = new McpServer({
-    name: "mysql-mcp",
+    name: "querybridge-mcp",
     version: "1.0.0",
   });
 
@@ -34,8 +34,14 @@ async function main() {
     }
   }
 
-  if (errors.length === config.connections.length && config.connections.length > 0) {
-    log("error", "all connections failed; server will start but no queries will work");
+  if (
+    errors.length === config.connections.length &&
+    config.connections.length > 0
+  ) {
+    log(
+      "error",
+      "all connections failed; server will start but no queries will work",
+    );
   }
 
   // Graceful shutdown

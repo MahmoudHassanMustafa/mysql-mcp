@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { loadConfig } from "../config.js";
 import { writeFileSync, unlinkSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -7,6 +7,8 @@ import { join } from "node:path";
 // Save and restore env vars between tests
 const savedEnv: Record<string, string | undefined> = {};
 const envKeys = [
+  "QUERYBRIDGE_MCP_CONFIG",
+  "QUERYBRIDGE_MCP_CONFIG_JSON",
   "MYSQL_MCP_CONFIG",
   "MYSQL_MCP_CONFIG_JSON",
   "MYSQL_HOST",
@@ -140,8 +142,8 @@ describe("loadConfig — env vars", () => {
 // ── loadConfig from inline JSON ─────────────────────────────────────
 
 describe("loadConfig — inline JSON", () => {
-  it("loads from MYSQL_MCP_CONFIG_JSON", () => {
-    process.env.MYSQL_MCP_CONFIG_JSON = JSON.stringify({
+  it("loads from QUERYBRIDGE_MCP_CONFIG_JSON", () => {
+    process.env.QUERYBRIDGE_MCP_CONFIG_JSON = JSON.stringify({
       connections: [
         { name: "test", host: "db.local", user: "admin", port: 3306 },
       ],
@@ -154,7 +156,7 @@ describe("loadConfig — inline JSON", () => {
   });
 
   it("accepts bare array format", () => {
-    process.env.MYSQL_MCP_CONFIG_JSON = JSON.stringify([
+    process.env.QUERYBRIDGE_MCP_CONFIG_JSON = JSON.stringify([
       { name: "a", host: "h1", user: "u1" },
       { name: "b", host: "h2", user: "u2" },
     ]);
@@ -164,7 +166,7 @@ describe("loadConfig — inline JSON", () => {
   });
 
   it("defaults readonly to true", () => {
-    process.env.MYSQL_MCP_CONFIG_JSON = JSON.stringify({
+    process.env.QUERYBRIDGE_MCP_CONFIG_JSON = JSON.stringify({
       connections: [{ name: "t", host: "h", user: "u" }],
     });
 
@@ -173,7 +175,7 @@ describe("loadConfig — inline JSON", () => {
   });
 
   it("allows readonly false", () => {
-    process.env.MYSQL_MCP_CONFIG_JSON = JSON.stringify({
+    process.env.QUERYBRIDGE_MCP_CONFIG_JSON = JSON.stringify({
       connections: [{ name: "t", host: "h", user: "u", readonly: false }],
     });
 
@@ -182,7 +184,7 @@ describe("loadConfig — inline JSON", () => {
   });
 
   it("rejects missing host", () => {
-    process.env.MYSQL_MCP_CONFIG_JSON = JSON.stringify({
+    process.env.QUERYBRIDGE_MCP_CONFIG_JSON = JSON.stringify({
       connections: [{ name: "t", user: "u" }],
     });
 
@@ -190,7 +192,7 @@ describe("loadConfig — inline JSON", () => {
   });
 
   it("rejects missing user", () => {
-    process.env.MYSQL_MCP_CONFIG_JSON = JSON.stringify({
+    process.env.QUERYBRIDGE_MCP_CONFIG_JSON = JSON.stringify({
       connections: [{ name: "t", host: "h" }],
     });
 
@@ -198,13 +200,13 @@ describe("loadConfig — inline JSON", () => {
   });
 
   it("rejects invalid root type", () => {
-    process.env.MYSQL_MCP_CONFIG_JSON = '"not an object"';
+    process.env.QUERYBRIDGE_MCP_CONFIG_JSON = '"not an object"';
 
     expect(() => loadConfig()).toThrow("Invalid config");
   });
 
   it("parses SSH config with tilde expansion", () => {
-    process.env.MYSQL_MCP_CONFIG_JSON = JSON.stringify({
+    process.env.QUERYBRIDGE_MCP_CONFIG_JSON = JSON.stringify({
       connections: [
         {
           name: "t",
@@ -225,7 +227,7 @@ describe("loadConfig — inline JSON", () => {
   });
 
   it("parses SSL boolean shorthand", () => {
-    process.env.MYSQL_MCP_CONFIG_JSON = JSON.stringify({
+    process.env.QUERYBRIDGE_MCP_CONFIG_JSON = JSON.stringify({
       connections: [{ name: "t", host: "h", user: "u", ssl: true }],
     });
 
@@ -234,7 +236,7 @@ describe("loadConfig — inline JSON", () => {
   });
 
   it("parses SSL object config", () => {
-    process.env.MYSQL_MCP_CONFIG_JSON = JSON.stringify({
+    process.env.QUERYBRIDGE_MCP_CONFIG_JSON = JSON.stringify({
       connections: [
         {
           name: "t",
@@ -246,13 +248,16 @@ describe("loadConfig — inline JSON", () => {
     });
 
     const config = loadConfig();
-    const ssl = config.connections[0].ssl as { ca: string; rejectUnauthorized: boolean };
+    const ssl = config.connections[0].ssl as {
+      ca: string;
+      rejectUnauthorized: boolean;
+    };
     expect(ssl.ca).toBe("/path/to/ca.pem");
     expect(ssl.rejectUnauthorized).toBe(false);
   });
 
   it("rejects SSH config without host", () => {
-    process.env.MYSQL_MCP_CONFIG_JSON = JSON.stringify({
+    process.env.QUERYBRIDGE_MCP_CONFIG_JSON = JSON.stringify({
       connections: [
         {
           name: "t",
@@ -267,7 +272,7 @@ describe("loadConfig — inline JSON", () => {
   });
 
   it("auto-generates connection names", () => {
-    process.env.MYSQL_MCP_CONFIG_JSON = JSON.stringify({
+    process.env.QUERYBRIDGE_MCP_CONFIG_JSON = JSON.stringify({
       connections: [
         { host: "h1", user: "u" },
         { host: "h2", user: "u" },
@@ -283,7 +288,7 @@ describe("loadConfig — inline JSON", () => {
 // ── loadConfig from file ────────────────────────────────────────────
 
 describe("loadConfig — config file", () => {
-  const tmpFile = join(tmpdir(), `mysql-mcp-test-${Date.now()}.json`);
+  const tmpFile = join(tmpdir(), `querybridge-mcp-test-${Date.now()}.json`);
 
   afterEach(() => {
     try {
@@ -293,30 +298,98 @@ describe("loadConfig — config file", () => {
     }
   });
 
-  it("loads from MYSQL_MCP_CONFIG file path", () => {
+  it("loads from QUERYBRIDGE_MCP_CONFIG file path", () => {
     writeFileSync(
       tmpFile,
       JSON.stringify({
         connections: [{ name: "file-test", host: "db.local", user: "admin" }],
-      })
+      }),
     );
-    process.env.MYSQL_MCP_CONFIG = tmpFile;
+    process.env.QUERYBRIDGE_MCP_CONFIG = tmpFile;
 
     const config = loadConfig();
     expect(config.connections[0].name).toBe("file-test");
   });
 
-  it("MYSQL_MCP_CONFIG takes priority over MYSQL_HOST", () => {
+  it("QUERYBRIDGE_MCP_CONFIG takes priority over MYSQL_HOST", () => {
     writeFileSync(
       tmpFile,
       JSON.stringify({
         connections: [{ name: "from-file", host: "file-host", user: "u" }],
-      })
+      }),
     );
-    process.env.MYSQL_MCP_CONFIG = tmpFile;
+    process.env.QUERYBRIDGE_MCP_CONFIG = tmpFile;
     process.env.MYSQL_HOST = "env-host";
 
     const config = loadConfig();
     expect(config.connections[0].host).toBe("file-host");
+  });
+});
+
+// ── Legacy env var fallback ─────────────────────────────────────────
+
+describe("loadConfig — legacy env var fallback", () => {
+  const tmpFile = join(tmpdir(), `querybridge-mcp-legacy-${Date.now()}.json`);
+  let stderrSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    stderrSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    stderrSpy.mockRestore();
+    try {
+      unlinkSync(tmpFile);
+    } catch {
+      // ignore
+    }
+  });
+
+  it("falls back to MYSQL_MCP_CONFIG and warns", () => {
+    writeFileSync(
+      tmpFile,
+      JSON.stringify({
+        connections: [{ name: "legacy", host: "db.local", user: "admin" }],
+      }),
+    );
+    process.env.MYSQL_MCP_CONFIG = tmpFile;
+
+    const config = loadConfig();
+    expect(config.connections[0].name).toBe("legacy");
+    const warnings = (stderrSpy.mock.calls as unknown[][])
+      .map((c) => c[0] as string)
+      .filter((m) => m.includes("MYSQL_MCP_CONFIG is deprecated"));
+    expect(warnings).toHaveLength(1);
+  });
+
+  it("falls back to MYSQL_MCP_CONFIG_JSON and warns", () => {
+    process.env.MYSQL_MCP_CONFIG_JSON = JSON.stringify({
+      connections: [{ name: "legacy-inline", host: "h", user: "u" }],
+    });
+
+    const config = loadConfig();
+    expect(config.connections[0].name).toBe("legacy-inline");
+    const warnings = (stderrSpy.mock.calls as unknown[][])
+      .map((c) => c[0] as string)
+      .filter((m) => m.includes("MYSQL_MCP_CONFIG_JSON is deprecated"));
+    expect(warnings).toHaveLength(1);
+  });
+
+  it("prefers QUERYBRIDGE_MCP_CONFIG over MYSQL_MCP_CONFIG without warning", () => {
+    writeFileSync(
+      tmpFile,
+      JSON.stringify({
+        connections: [{ name: "new", host: "h", user: "u" }],
+      }),
+    );
+    process.env.QUERYBRIDGE_MCP_CONFIG = tmpFile;
+    process.env.MYSQL_MCP_CONFIG = "/nonexistent";
+
+    const config = loadConfig();
+    expect(config.connections[0].name).toBe("new");
+    const warnings = (stderrSpy.mock.calls as unknown[][])
+      .map((c) => c[0] as string)
+      .filter((m) => m.includes("deprecated"));
+    expect(warnings).toHaveLength(0);
   });
 });

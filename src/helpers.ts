@@ -18,7 +18,9 @@ export function escapeId(name: string): string {
     throw new Error("Identifier cannot be empty");
   }
   if (name.length > 64) {
-    throw new Error(`Identifier too long (max 64 chars): "${name.substring(0, 20)}..."`);
+    throw new Error(
+      `Identifier too long (max 64 chars): "${name.substring(0, 20)}..."`,
+    );
   }
   if (name.includes("\0")) {
     throw new Error("Identifier cannot contain NUL bytes");
@@ -34,14 +36,14 @@ export function qualifiedTable(db: string, table: string): string {
 
 export function resolveDb(
   connection: string,
-  database?: string
+  database?: string,
 ): { db: string } | { error: ReturnType<typeof toolError> } {
   const db = database || getConnectionConfig(connection).database;
   if (!db) {
     return {
       error: toolError(
         "No database selected.",
-        "Specify a database parameter or use use_database first."
+        "Specify a database parameter or use use_database first.",
       ),
     };
   }
@@ -59,10 +61,10 @@ type LogLevel = "info" | "warn" | "error";
 export function log(
   level: LogLevel,
   msg: string,
-  ctx?: Record<string, unknown>
+  ctx?: Record<string, unknown>,
 ): void {
   const suffix = ctx ? " " + JSON.stringify(ctx) : "";
-  console.error(`[mysql-mcp] ${level.toUpperCase()} ${msg}${suffix}`);
+  console.error(`[querybridge-mcp] ${level.toUpperCase()} ${msg}${suffix}`);
 }
 
 // ── SSH host key verification ───────────────────────────────────────
@@ -78,11 +80,14 @@ export function log(
  * on either side.
  */
 export function buildHostVerifier(
-  expected: string | undefined
+  expected: string | undefined,
 ): ((key: Buffer) => boolean) | undefined {
   if (!expected) return undefined;
   // Normalize: strip optional "SHA256:" prefix and any base64 padding
-  const normalized = expected.replace(/^SHA256:/i, "").replace(/=+$/, "").trim();
+  const normalized = expected
+    .replace(/^SHA256:/i, "")
+    .replace(/=+$/, "")
+    .trim();
   return (key: Buffer) => {
     const actual = createHash("sha256")
       .update(key)
@@ -126,9 +131,7 @@ export function toolError(message: string, hint?: string) {
   };
 }
 
-type ToolResult =
-  | ReturnType<typeof toolOk>
-  | ReturnType<typeof toolError>;
+type ToolResult = ReturnType<typeof toolOk> | ReturnType<typeof toolError>;
 
 /**
  * Wrap a tool handler with uniform error handling:
@@ -141,7 +144,7 @@ type ToolResult =
  */
 export function toolHandler<A extends Record<string, unknown>>(
   toolName: string,
-  fn: (args: A) => Promise<ToolResult>
+  fn: (args: A) => Promise<ToolResult>,
 ): (args: A) => Promise<ToolResult> {
   return async (args: A) => {
     try {
@@ -168,7 +171,7 @@ const MAX_OUTPUT_BYTES = 256 * 1024;
 
 export function formatAsTable(
   rows: Record<string, unknown>[],
-  opts?: { maxWidth?: number; maxBytes?: number }
+  opts?: { maxWidth?: number; maxBytes?: number },
 ): string {
   if (rows.length === 0) return "(empty)";
 
@@ -202,8 +205,8 @@ export function formatAsTable(
   const widths = keys.map((k) =>
     Math.min(
       maxW,
-      Math.max(k.length, ...rows.map((r) => truncate(r[k]).length))
-    )
+      Math.max(k.length, ...rows.map((r) => truncate(r[k]).length)),
+    ),
   );
 
   const header = keys.map((k, i) => k.padEnd(widths[i])).join(" | ");
@@ -260,9 +263,9 @@ export function humanSize(bytes: number | null | undefined): string {
  */
 export function stripSQLComments(sql: string): string {
   return sql
-    .replace(/\/\*[\s\S]*?\*\//g, " ")  // block comments
-    .replace(/--[^\n]*/g, " ")           // -- line comments
-    .replace(/#[^\n]*/g, " ")            // # line comments
+    .replace(/\/\*[\s\S]*?\*\//g, " ") // block comments
+    .replace(/--[^\n]*/g, " ") // -- line comments
+    .replace(/#[^\n]*/g, " ") // # line comments
     .trim();
 }
 

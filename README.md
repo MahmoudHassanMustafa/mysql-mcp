@@ -1,6 +1,6 @@
-# mysql-mcp
+# querybridge-mcp
 
-[![CI](https://github.com/MahmoudHassanMustafa/mysql-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/MahmoudHassanMustafa/mysql-mcp/actions/workflows/ci.yml)
+[![CI](https://github.com/MahmoudHassanMustafa/querybridge-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/MahmoudHassanMustafa/querybridge-mcp/actions/workflows/ci.yml)
 
 A Model Context Protocol (MCP) server that connects Claude Code to MySQL databases. Supports SSH tunnels, SSL/TLS, and multiple simultaneous connections.
 
@@ -17,16 +17,23 @@ A Model Context Protocol (MCP) server that connects Claude Code to MySQL databas
 
 ## Installation
 
+Install globally from npm:
+
 ```bash
-cd mysql-mcp
-pnpm install
-pnpm build
+npm install -g querybridge-mcp
+```
+
+Or run on demand without installing:
+
+```bash
+npx querybridge-mcp <command>
+npx querybridge-mcp-server   # starts the MCP server
 ```
 
 ### Register with Claude Code
 
 ```bash
-claude mcp add mysql-mcp -e MYSQL_MCP_CONFIG=/path/to/config.json -- node /path/to/mysql-mcp/dist/index.js
+claude mcp add querybridge-mcp -e QUERYBRIDGE_MCP_CONFIG=/path/to/config.json -- querybridge-mcp-server
 ```
 
 Or manually in `~/.claude.json`:
@@ -34,61 +41,54 @@ Or manually in `~/.claude.json`:
 ```json
 {
   "mcpServers": {
-    "mysql-mcp": {
+    "querybridge-mcp": {
       "type": "stdio",
-      "command": "node",
-      "args": ["/path/to/mysql-mcp/dist/index.js"],
+      "command": "querybridge-mcp-server",
       "env": {
-        "MYSQL_MCP_CONFIG": "/path/to/config.json"
+        "QUERYBRIDGE_MCP_CONFIG": "/path/to/config.json"
       }
     }
   }
 }
 ```
 
+If `querybridge-mcp-server` isn't on your PATH (e.g. not installed globally), swap `command` for `npx` with `"args": ["-y", "querybridge-mcp-server"]`.
+
 ## CLI
 
-The CLI manages your `config.json` without editing it by hand.
-
-```bash
-# Link globally (once)
-pnpm link --global
-
-# Or run directly
-node dist/cli.js <command>
-```
+The CLI manages your `config.json` without editing it by hand. After `npm install -g querybridge-mcp`, the `querybridge-mcp` command is on your PATH.
 
 ### Commands
 
 | Command | Description |
 |---------|-------------|
-| `mysql-mcp list` | List all configured connections |
-| `mysql-mcp add [name]` | Add a new connection (interactive) |
-| `mysql-mcp remove <name>` | Remove a connection |
-| `mysql-mcp test [name]` | Test one or all connections |
-| `mysql-mcp init` | Create an empty config file |
+| `querybridge-mcp list` | List all configured connections |
+| `querybridge-mcp add [name]` | Add a new connection (interactive) |
+| `querybridge-mcp remove <name>` | Remove a connection |
+| `querybridge-mcp test [name]` | Test one or all connections |
+| `querybridge-mcp init` | Create an empty config file |
 
 ### Examples
 
 ```bash
 # Create config and add first connection interactively
-mysql-mcp init
-mysql-mcp add production
+querybridge-mcp init
+querybridge-mcp add production
 
 # Test all connections
-mysql-mcp test
+querybridge-mcp test
 
 # Test a specific connection
-mysql-mcp test production
+querybridge-mcp test production
 
 # Remove a connection
-mysql-mcp remove staging
+querybridge-mcp remove staging
 ```
 
-Set `MYSQL_MCP_CONFIG` in your shell profile so the CLI always finds your config:
+Set `QUERYBRIDGE_MCP_CONFIG` in your shell profile so the CLI always finds your config:
 
 ```bash
-export MYSQL_MCP_CONFIG=~/.config/mysql-mcp/config.json
+export QUERYBRIDGE_MCP_CONFIG=~/.config/querybridge-mcp/config.json
 ```
 
 ## Configuration
@@ -97,7 +97,7 @@ Three ways to configure, in order of precedence:
 
 ### 1. Config file (recommended)
 
-Set `MYSQL_MCP_CONFIG` to a JSON file path, or use the CLI to build one.
+Set `QUERYBRIDGE_MCP_CONFIG` to a JSON file path, or use the CLI to build one.
 
 ```json
 {
@@ -118,10 +118,10 @@ Set `MYSQL_MCP_CONFIG` to a JSON file path, or use the CLI to build one.
 
 ### 2. Inline JSON
 
-Set `MYSQL_MCP_CONFIG_JSON` to a JSON string:
+Set `QUERYBRIDGE_MCP_CONFIG_JSON` to a JSON string:
 
 ```bash
-MYSQL_MCP_CONFIG_JSON='{"connections":[{"name":"dev","host":"localhost","user":"root","password":"secret","database":"myapp"}]}'
+QUERYBRIDGE_MCP_CONFIG_JSON='{"connections":[{"name":"dev","host":"localhost","user":"root","password":"secret","database":"myapp"}]}'
 ```
 
 ### 3. Environment variables (single connection)
@@ -293,7 +293,7 @@ Prompts appear in the MCP prompt list. Select one and provide the required argum
 ## Project structure
 
 ```
-mysql-mcp/
+querybridge-mcp/
   src/
     index.ts              Server entry point (MCP stdio transport)
     cli.ts                CLI entry point

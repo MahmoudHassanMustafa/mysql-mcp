@@ -5,7 +5,7 @@
 Please **do not** open a public issue for security vulnerabilities.
 
 Instead, report them privately via
-[GitHub's private vulnerability reporting](https://github.com/MahmoudHassanMustafa/mysql-mcp/security/advisories/new).
+[GitHub's private vulnerability reporting](https://github.com/MahmoudHassanMustafa/querybridge-mcp/security/advisories/new).
 Include:
 
 - A description of the issue and its impact

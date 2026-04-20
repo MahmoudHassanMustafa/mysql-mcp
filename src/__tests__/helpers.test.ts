@@ -142,10 +142,7 @@ describe("formatAsTable", () => {
   });
 
   it("truncates long values with maxWidth", () => {
-    const result = formatAsTable(
-      [{ col: "a".repeat(100) }],
-      { maxWidth: 20 }
-    );
+    const result = formatAsTable([{ col: "a".repeat(100) }], { maxWidth: 20 });
     expect(result).toContain("...");
     expect(result).not.toContain("a".repeat(100));
   });
@@ -153,17 +150,16 @@ describe("formatAsTable", () => {
   it("renders JSON-column objects as JSON, not [object Object]", () => {
     const result = formatAsTable(
       [{ services: { web: true, db: "postgres" } }],
-      { maxWidth: 100 }
+      { maxWidth: 100 },
     );
     expect(result).not.toContain("[object Object]");
     expect(result).toContain('{"web":true,"db":"postgres"}');
   });
 
   it("renders JSON-column arrays with structure preserved", () => {
-    const result = formatAsTable(
-      [{ tags: ["a", "b", "c"] }],
-      { maxWidth: 100 }
-    );
+    const result = formatAsTable([{ tags: ["a", "b", "c"] }], {
+      maxWidth: 100,
+    });
     expect(result).toContain('["a","b","c"]');
   });
 
@@ -218,7 +214,7 @@ describe("formatAsTable", () => {
     const obj: Record<string, unknown> = { a: 1 };
     obj.self = obj;
     expect(() =>
-      formatAsTable([{ col: obj }], { maxWidth: 100 })
+      formatAsTable([{ col: obj }], { maxWidth: 100 }),
     ).not.toThrow();
   });
 });
@@ -297,25 +293,25 @@ describe("stripSQLComments", () => {
 describe("sanitizeErrorMessage", () => {
   it("strips user@host patterns", () => {
     expect(
-      sanitizeErrorMessage("Access denied for user 'app'@'10.0.0.5'")
+      sanitizeErrorMessage("Access denied for user 'app'@'10.0.0.5'"),
     ).toBe("Access denied for user '***'@'***'");
   });
 
   it("strips IPv4 addresses", () => {
     expect(
-      sanitizeErrorMessage("Can't connect to MySQL server on 192.168.1.42")
+      sanitizeErrorMessage("Can't connect to MySQL server on 192.168.1.42"),
     ).toBe("Can't connect to MySQL server on ***");
   });
 
   it("strips multiple IPs in one message", () => {
     expect(sanitizeErrorMessage("tried 10.0.0.1 then 10.0.0.2")).toBe(
-      "tried *** then ***"
+      "tried *** then ***",
     );
   });
 
   it("leaves unrelated text intact", () => {
     expect(sanitizeErrorMessage("Table 'users' doesn't exist")).toBe(
-      "Table 'users' doesn't exist"
+      "Table 'users' doesn't exist",
     );
   });
 
@@ -349,19 +345,19 @@ describe("log", () => {
 
   it("formats level in uppercase with prefix", () => {
     log("warn", "something");
-    expect(stderrSpy).toHaveBeenCalledWith("[mysql-mcp] WARN something");
+    expect(stderrSpy).toHaveBeenCalledWith("[querybridge-mcp] WARN something");
   });
 
   it("appends ctx as JSON when provided", () => {
     log("error", "boom", { connection: "prod", code: 42 });
     expect(stderrSpy).toHaveBeenCalledWith(
-      '[mysql-mcp] ERROR boom {"connection":"prod","code":42}'
+      '[querybridge-mcp] ERROR boom {"connection":"prod","code":42}',
     );
   });
 
   it("omits suffix when ctx is undefined", () => {
     log("info", "ready");
-    expect(stderrSpy).toHaveBeenCalledWith("[mysql-mcp] INFO ready");
+    expect(stderrSpy).toHaveBeenCalledWith("[querybridge-mcp] INFO ready");
   });
 });
 
@@ -387,7 +383,7 @@ describe("toolHandler", () => {
 
   it("passes through an early-returned toolError unchanged", async () => {
     const wrapped = toolHandler("demo", async () =>
-      toolError("precondition failed")
+      toolError("precondition failed"),
     );
     const res = await wrapped({});
     expect(res.content[0].text).toBe("precondition failed");
@@ -402,7 +398,7 @@ describe("toolHandler", () => {
     const res = await wrapped({ connection: "prod" });
     expect("isError" in res && res.isError).toBe(true);
     expect(res.content[0].text).toBe(
-      "my_tool failed: Access denied for user '***'@'***'"
+      "my_tool failed: Access denied for user '***'@'***'",
     );
     expect(stderrSpy).toHaveBeenCalledTimes(1);
     const logged = stderrSpy.mock.calls[0][0] as string;

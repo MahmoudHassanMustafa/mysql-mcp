@@ -12,10 +12,14 @@ import type { AppConfig, DatabaseConfig, SSHConfig } from "./types.js";
 // ── Config file resolution ──────────────────────────────────────────
 
 function getConfigPath(): string {
-  if (process.env.MYSQL_MCP_CONFIG) {
-    return resolve(expandTilde(process.env.MYSQL_MCP_CONFIG));
+  if (process.env.QUERYBRIDGE_MCP_CONFIG) {
+    return resolve(expandTilde(process.env.QUERYBRIDGE_MCP_CONFIG));
   }
-  return resolve(dirname(new URL(import.meta.url).pathname), "..", "config.json");
+  return resolve(
+    dirname(new URL(import.meta.url).pathname),
+    "..",
+    "config.json",
+  );
 }
 
 function loadConfig(path: string): AppConfig {
@@ -40,7 +44,11 @@ function createRL() {
   return createInterface({ input: process.stdin, output: process.stdout });
 }
 
-function ask(rl: ReturnType<typeof createRL>, question: string, defaultVal?: string): Promise<string> {
+function ask(
+  rl: ReturnType<typeof createRL>,
+  question: string,
+  defaultVal?: string,
+): Promise<string> {
   const suffix = defaultVal ? ` [${defaultVal}]` : "";
   return new Promise((resolve) => {
     rl.question(`${question}${suffix}: `, (answer) => {
@@ -49,7 +57,11 @@ function ask(rl: ReturnType<typeof createRL>, question: string, defaultVal?: str
   });
 }
 
-function askYesNo(rl: ReturnType<typeof createRL>, question: string, defaultVal = false): Promise<boolean> {
+function askYesNo(
+  rl: ReturnType<typeof createRL>,
+  question: string,
+  defaultVal = false,
+): Promise<boolean> {
   const hint = defaultVal ? "[Y/n]" : "[y/N]";
   return new Promise((resolve) => {
     rl.question(`${question} ${hint}: `, (answer) => {
@@ -75,10 +87,14 @@ async function cmdList() {
   console.log(`\n  Connections (${configPath}):\n`);
   for (const conn of config.connections) {
     const db = conn.database ? ` db=${conn.database}` : "";
-    const ssh = conn.ssh ? ` [SSH: ${conn.ssh.host}:${conn.ssh.port ?? 22}]` : "";
+    const ssh = conn.ssh
+      ? ` [SSH: ${conn.ssh.host}:${conn.ssh.port ?? 22}]`
+      : "";
     const ssl = conn.ssl ? " [SSL]" : "";
     const mode = conn.readonly !== false ? " (read-only)" : " (read-write)";
-    console.log(`  ${bold(conn.name)}: ${conn.host}:${conn.port ?? 3306}${db}${ssh}${ssl}${mode}`);
+    console.log(
+      `  ${bold(conn.name)}: ${conn.host}:${conn.port ?? 3306}${db}${ssh}${ssl}${mode}`,
+    );
   }
   console.log();
 }
@@ -91,13 +107,15 @@ async function cmdAdd(name?: string) {
   try {
     console.log("\n  Add a new MySQL connection\n");
 
-    const connName = name || await ask(rl, "  Connection name");
+    const connName = name || (await ask(rl, "  Connection name"));
     if (!connName) {
       console.log("  Name is required.");
       return;
     }
     if (config.connections.find((c) => c.name === connName)) {
-      console.log(`  Connection "${connName}" already exists. Use 'mysql-mcp remove ${connName}' first.`);
+      console.log(
+        `  Connection "${connName}" already exists. Use 'querybridge-mcp remove ${connName}' first.`,
+      );
       return;
     }
 
@@ -134,7 +152,7 @@ async function cmdAdd(name?: string) {
 
       if (useKey) {
         ssh.privateKeyPath = expandTilde(
-          await ask(rl, "  Private key path", "~/.ssh/id_rsa")
+          await ask(rl, "  Private key path", "~/.ssh/id_rsa"),
         );
         const passphrase = await ask(rl, "  Key passphrase (optional)");
         if (passphrase) ssh.passphrase = passphrase;
@@ -165,19 +183,27 @@ async function cmdAdd(name?: string) {
     }
 
     // Test before saving?
-    const shouldTest = await askYesNo(rl, "\n  Test connection before saving?", true);
+    const shouldTest = await askYesNo(
+      rl,
+      "\n  Test connection before saving?",
+      true,
+    );
 
     if (shouldTest) {
       const ok = await testConnection(conn);
       if (!ok) {
-        console.log("\n  Connection failed. Save anyway? Run: mysql-mcp add");
+        console.log(
+          "\n  Connection failed. Save anyway? Run: querybridge-mcp add",
+        );
         return;
       }
     }
 
     config.connections.push(conn);
     saveConfig(configPath, config);
-    console.log(`\n  ${green("+")} Connection "${connName}" saved to ${configPath}`);
+    console.log(
+      `\n  ${green("+")} Connection "${connName}" saved to ${configPath}`,
+    );
   } finally {
     rl.close();
   }
@@ -188,7 +214,7 @@ async function cmdRemove(name?: string) {
   const config = loadConfig(configPath);
 
   if (!name) {
-    console.log("Usage: mysql-mcp remove <connection-name>");
+    console.log("Usage: querybridge-mcp remove <connection-name>");
     return;
   }
 
@@ -233,18 +259,21 @@ async function cmdInit() {
   const configPath = getConfigPath();
   if (existsSync(configPath)) {
     console.log(`Config already exists at ${configPath}`);
-    console.log('Use "mysql-mcp add" to add connections.');
+    console.log('Use "querybridge-mcp add" to add connections.');
     return;
   }
 
   saveConfig(configPath, { connections: [] });
   console.log(`Created empty config at ${configPath}`);
-  console.log('Run "mysql-mcp add" to add your first connection.');
+  console.log('Run "querybridge-mcp add" to add your first connection.');
 }
 
 // ── Connection tester ───────────────────────────────────────────────
 
-async function testConnection(conn: DatabaseConfig, inline = false): Promise<boolean> {
+async function testConnection(
+  conn: DatabaseConfig,
+  inline = false,
+): Promise<boolean> {
   let mysqlHost = conn.host;
   let mysqlPort = conn.port ?? 3306;
   let sshClient: SSHClient | undefined;
@@ -289,7 +318,8 @@ async function testConnection(conn: DatabaseConfig, inline = false): Promise<boo
 
     // Get version info
     const [rows] = await connection.query("SELECT VERSION() AS version");
-    const version = (rows as Array<Record<string, string>>)[0]?.version ?? "unknown";
+    const version =
+      (rows as Array<Record<string, string>>)[0]?.version ?? "unknown";
 
     // Count databases accessible
     const [dbs] = await connection.query("SHOW DATABASES");
@@ -320,7 +350,7 @@ async function testConnection(conn: DatabaseConfig, inline = false): Promise<boo
 }
 
 function setupTestTunnel(
-  conn: DatabaseConfig
+  conn: DatabaseConfig,
 ): Promise<{ port: number; sshClient: SSHClient; localServer: net.Server }> {
   return new Promise((resolve, reject) => {
     const ssh = conn.ssh!;
@@ -343,12 +373,21 @@ function setupTestTunnel(
     client.on("error", reject);
     client.on("ready", () => {
       const server = net.createServer((sock) => {
-        client.forwardOut("127.0.0.1", 0, conn.host, conn.port ?? 3306, (err, stream) => {
-          if (err) { sock.destroy(); return; }
-          sock.pipe(stream).pipe(sock);
-          sock.on("error", () => stream.destroy());
-          stream.on("error", () => sock.destroy());
-        });
+        client.forwardOut(
+          "127.0.0.1",
+          0,
+          conn.host,
+          conn.port ?? 3306,
+          (err, stream) => {
+            if (err) {
+              sock.destroy();
+              return;
+            }
+            sock.pipe(stream).pipe(sock);
+            sock.on("error", () => stream.destroy());
+            stream.on("error", () => sock.destroy());
+          },
+        );
       });
 
       server.listen(0, "127.0.0.1", () => {
@@ -364,18 +403,24 @@ function setupTestTunnel(
 
 // ── Terminal colors ─────────────────────────────────────────────────
 
-function bold(s: string): string { return `\x1b[1m${s}\x1b[0m`; }
-function green(s: string): string { return `\x1b[32m${s}\x1b[0m`; }
-function red(s: string): string { return `\x1b[31m${s}\x1b[0m`; }
+function bold(s: string): string {
+  return `\x1b[1m${s}\x1b[0m`;
+}
+function green(s: string): string {
+  return `\x1b[32m${s}\x1b[0m`;
+}
+function red(s: string): string {
+  return `\x1b[31m${s}\x1b[0m`;
+}
 
 // ── Usage ───────────────────────────────────────────────────────────
 
 function printUsage() {
   console.log(`
-  ${bold("mysql-mcp")} — MySQL MCP Server CLI
+  ${bold("querybridge-mcp")} — MySQL MCP Server CLI
 
   ${bold("Usage:")}
-    mysql-mcp <command> [options]
+    querybridge-mcp <command> [options]
 
   ${bold("Commands:")}
     list                  List all configured connections
@@ -386,15 +431,15 @@ function printUsage() {
     serve                 Start the MCP server (default)
 
   ${bold("Environment:")}
-    MYSQL_MCP_CONFIG      Path to config.json (default: ./config.json)
+    QUERYBRIDGE_MCP_CONFIG      Path to config.json (default: ./config.json)
 
   ${bold("Examples:")}
-    mysql-mcp init
-    mysql-mcp add production
-    mysql-mcp test
-    mysql-mcp test production
-    mysql-mcp list
-    mysql-mcp remove staging
+    querybridge-mcp init
+    querybridge-mcp add production
+    querybridge-mcp test
+    querybridge-mcp test production
+    querybridge-mcp list
+    querybridge-mcp remove staging
 `);
 }
 

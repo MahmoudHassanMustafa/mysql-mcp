@@ -18,8 +18,8 @@ export function registerPrompts(server: McpServer) {
             type: "text" as const,
             text: `Explore the database "${database}" on connection "${connection}". Follow these steps:
 
-1. Use **list_tables** to see all tables with row counts
-2. Use **describe_table** on the key tables to understand their structure
+1. Use **list_tables** and **list_views** to enumerate tables and views
+2. Use **describe_table** on the key tables, and **describe_view** on the key views, to understand their structure
 3. Use **get_foreign_keys** (without a table filter) to map all relationships
 4. Use **list_routines** to check for stored procedures and functions
 5. Use **list_triggers** to check for triggers
@@ -125,6 +125,7 @@ Follow these steps:
 6. **Stored procedures and functions** — Use list_routines to catalog programmability
 7. **Triggers** — Use list_triggers to list all triggers and note any complex logic
 8. **Scheduled events** — Use list_events to check for events and their status
+9. **Views** — Use list_views to catalog views; spot-check the heavy ones with get_view_ddl
 
 Produce a report with:
 - Critical issues (data integrity, missing indexes on large tables)

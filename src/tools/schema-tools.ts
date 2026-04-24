@@ -6,6 +6,7 @@ import {
   resolveDb,
   formatAsTable,
   toolOk,
+  toolError,
   toolHandler,
 } from "../helpers.js";
 
@@ -57,7 +58,17 @@ export function registerSchemaTools(server: McpServer) {
         connection,
         `SHOW CREATE TABLE ${qt}`
       );
-      const createStatement = createResult[0]?.["Create Table"] ?? "";
+      // SHOW CREATE TABLE also succeeds on views, but returns a "Create
+      // View" key instead of "Create Table". Detect that and redirect the
+      // caller at the dedicated view tools.
+      const createRow = createResult[0];
+      if (createRow && !createRow["Create Table"] && createRow["Create View"]) {
+        return toolError(
+          `"${table}" is a view, not a table.`,
+          "Use describe_view or get_view_ddl instead."
+        );
+      }
+      const createStatement = createRow?.["Create Table"] ?? "";
       const indexes = await queryWithTimeout(connection, `SHOW INDEX FROM ${qt}`);
 
       const output = [
@@ -274,6 +285,95 @@ export function registerSchemaTools(server: McpServer) {
       return toolOk(
         formatAsTable(cols) + `\n\n${cols.length} column(s) matching "${pattern}"`
       );
+    })
+  );
+
+  // ── list_views ────────────────────────────────────────────────────
+  server.tool(
+    "list_views",
+    "List all views in the current (or specified) database",
+    {
+      connection: z.string().describe("Connection name"),
+      database: z
+        .string()
+        .optional()
+        .describe("Database name (uses connection default if omitted)"),
+    },
+    toolHandler("list_views", async ({ connection, database }) => {
+      const r = resolveDb(connection, database);
+      if ("error" in r) return r.error;
+
+      const views = await queryWithTimeout<Array<Record<string, unknown>>>(
+        connection,
+        `SELECT TABLE_NAME, IS_UPDATABLE, DEFINER, SECURITY_TYPE, CHECK_OPTION
+         FROM information_schema.VIEWS
+         WHERE TABLE_SCHEMA = ?
+         ORDER BY TABLE_NAME`,
+        [r.db]
+      );
+      if (views.length === 0) return toolOk(`No views found in ${r.db}`);
+
+      return toolOk(
+        formatAsTable(views) + `\n\n${views.length} view(s) in ${r.db}`
+      );
+    })
+  );
+
+  // ── describe_view ─────────────────────────────────────────────────
+  server.tool(
+    "describe_view",
+    "Show the columns and CREATE VIEW DDL of a view",
+    {
+      connection: z.string().describe("Connection name"),
+      view: z.string().describe("View name"),
+      database: z.string().optional().describe("Database name"),
+    },
+    toolHandler("describe_view", async ({ connection, view, database }) => {
+      const r = resolveDb(connection, database);
+      if ("error" in r) return r.error;
+      const qv = qualifiedTable(r.db, view);
+
+      const columns = await queryWithTimeout(connection, `DESCRIBE ${qv}`);
+      const createResult = await queryWithTimeout<Array<Record<string, string>>>(
+        connection,
+        `SHOW CREATE VIEW ${qv}`
+      );
+      const createStatement = createResult[0]?.["Create View"] ?? "";
+
+      const output = [
+        "## Columns",
+        formatAsTable(columns as Record<string, unknown>[]),
+        "",
+        "## Create Statement",
+        "```sql",
+        createStatement,
+        "```",
+      ].join("\n");
+
+      return toolOk(output);
+    })
+  );
+
+  // ── get_view_ddl ──────────────────────────────────────────────────
+  server.tool(
+    "get_view_ddl",
+    "Get the CREATE VIEW DDL statement for a view",
+    {
+      connection: z.string().describe("Connection name"),
+      view: z.string().describe("View name"),
+      database: z.string().optional().describe("Database name"),
+    },
+    toolHandler("get_view_ddl", async ({ connection, view, database }) => {
+      const r = resolveDb(connection, database);
+      if ("error" in r) return r.error;
+      const qv = qualifiedTable(r.db, view);
+
+      const rows = await queryWithTimeout<Array<Record<string, string>>>(
+        connection,
+        `SHOW CREATE VIEW ${qv}`
+      );
+      const ddl = rows[0]?.["Create View"] ?? "";
+      return toolOk(ddl);
     })
   );
 }

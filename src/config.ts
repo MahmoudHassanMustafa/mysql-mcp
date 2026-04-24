@@ -69,6 +69,12 @@ export function loadConfig(): AppConfig {
         : undefined,
       passphrase: process.env.SSH_PASSPHRASE,
       hostFingerprint: process.env.SSH_HOST_FINGERPRINT,
+      keepaliveInterval: process.env.SSH_KEEPALIVE_INTERVAL
+        ? parseInt(process.env.SSH_KEEPALIVE_INTERVAL, 10)
+        : undefined,
+      keepaliveCountMax: process.env.SSH_KEEPALIVE_COUNT_MAX
+        ? parseInt(process.env.SSH_KEEPALIVE_COUNT_MAX, 10)
+        : undefined,
     };
   }
 

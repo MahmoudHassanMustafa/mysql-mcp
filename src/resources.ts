@@ -1,9 +1,9 @@
 import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
-  getPool,
   listConnectionNames,
   getConnectionConfig,
+  queryWithTimeout,
 } from "./connection.js";
 import { qualifiedTable, formatAsTable } from "./helpers.js";
 
@@ -28,13 +28,13 @@ export function registerResources(server: McpServer) {
             if (!db) continue;
 
             try {
-              const pool = getPool(connName);
-              const [rows] = await pool.query(
+              const rows = await queryWithTimeout<Array<Record<string, string>>>(
+                connName,
                 `SELECT TABLE_NAME FROM information_schema.TABLES
                  WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'`,
                 [db]
               );
-              for (const row of rows as Array<Record<string, string>>) {
+              for (const row of rows) {
                 const table = row.TABLE_NAME;
                 resources.push({
                   uri: `mysql://${connName}/${db}/${table}/schema`,
@@ -54,11 +54,11 @@ export function registerResources(server: McpServer) {
           database: async (value, ctx) => {
             try {
               const args = ctx?.arguments ?? {};
-              const pool = getPool(args.connection as string);
-              const [rows] = await pool.query("SHOW DATABASES");
-              return (rows as Array<Record<string, string>>).map(
-                (r) => Object.values(r)[0]
+              const rows = await queryWithTimeout<Array<Record<string, string>>>(
+                args.connection as string,
+                "SHOW DATABASES"
               );
+              return rows.map((r) => Object.values(r)[0]);
             } catch {
               return [];
             }
@@ -66,16 +66,14 @@ export function registerResources(server: McpServer) {
           table: async (value, ctx) => {
             try {
               const args = ctx?.arguments ?? {};
-              const pool = getPool(args.connection as string);
               const db = args.database as string;
-              const [rows] = await pool.query(
+              const rows = await queryWithTimeout<Array<Record<string, string>>>(
+                args.connection as string,
                 `SELECT TABLE_NAME FROM information_schema.TABLES
                  WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'`,
                 [db]
               );
-              return (rows as Array<Record<string, string>>).map(
-                (r) => r.TABLE_NAME
-              );
+              return rows.map((r) => r.TABLE_NAME);
             } catch {
               return [];
             }
@@ -88,14 +86,14 @@ export function registerResources(server: McpServer) {
       const connName = variables.connection as string;
       const db = variables.database as string;
       const table = variables.table as string;
-      const pool = getPool(connName);
       const qt = qualifiedTable(db, table);
 
-      const [columns] = await pool.query(`DESCRIBE ${qt}`);
-      const [createResult] = await pool.query(`SHOW CREATE TABLE ${qt}`);
-      const createStatement =
-        (createResult as Array<Record<string, string>>)[0]?.["Create Table"] ??
-        "";
+      const columns = await queryWithTimeout(connName, `DESCRIBE ${qt}`);
+      const createResult = await queryWithTimeout<Array<Record<string, string>>>(
+        connName,
+        `SHOW CREATE TABLE ${qt}`
+      );
+      const createStatement = createResult[0]?.["Create Table"] ?? "";
 
       const text = [
         `# ${db}.${table}`,
@@ -147,11 +145,11 @@ export function registerResources(server: McpServer) {
           database: async (value, ctx) => {
             try {
               const args = ctx?.arguments ?? {};
-              const pool = getPool(args.connection as string);
-              const [rows] = await pool.query("SHOW DATABASES");
-              return (rows as Array<Record<string, string>>).map(
-                (r) => Object.values(r)[0]
+              const rows = await queryWithTimeout<Array<Record<string, string>>>(
+                args.connection as string,
+                "SHOW DATABASES"
               );
+              return rows.map((r) => Object.values(r)[0]);
             } catch {
               return [];
             }
@@ -166,9 +164,9 @@ export function registerResources(server: McpServer) {
     async (uri, variables) => {
       const connName = variables.connection as string;
       const db = variables.database as string;
-      const pool = getPool(connName);
 
-      const [rows] = await pool.query(
+      const rows = await queryWithTimeout<Array<Record<string, unknown>>>(
+        connName,
         `SELECT TABLE_NAME, TABLE_ROWS, ENGINE, DATA_LENGTH, INDEX_LENGTH
          FROM information_schema.TABLES
          WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'
@@ -179,7 +177,7 @@ export function registerResources(server: McpServer) {
       const text = [
         `# Database: ${db}`,
         "",
-        formatAsTable(rows as Record<string, unknown>[]),
+        formatAsTable(rows),
       ].join("\n");
 
       return {

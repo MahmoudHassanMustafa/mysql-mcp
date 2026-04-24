@@ -161,7 +161,10 @@ export function toolHandler<A extends Record<string, unknown>>(
 
 // ── Table formatting ────────────────────────────────────────────────
 
-const MAX_COL_WIDTH = 60;
+// 120 balances readability against information loss for long values
+// (URLs, JSON, view bodies, error messages). The byte cap below still
+// bounds total output, so loosening the per-cell cap is safe.
+const MAX_COL_WIDTH = 120;
 // Hard cap on total formatted output. 500 wide rows with TEXT/JSON/BLOB
 // columns can run into the multi-MB range, which has been observed to
 // provoke 500-class errors from the Anthropic API rather than a clean

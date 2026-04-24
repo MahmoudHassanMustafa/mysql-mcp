@@ -168,6 +168,7 @@ function setupSSHTunnel(config: DatabaseConfig): Promise<TunnelResult> {
     const client = new SSHClient();
     const hostVerifier = buildHostVerifier(ssh.hostFingerprint);
     let settled = false;
+    let localServerRef: net.Server | undefined;
 
     if (hostVerifier) {
       log("info", "SSH host fingerprint verification enabled", {
@@ -224,6 +225,13 @@ function setupSSHTunnel(config: DatabaseConfig): Promise<TunnelResult> {
     });
     client.on("close", () => {
       log("info", "SSH client closed", { connection: config.name });
+      // Close the local listener so the pool's next getConnection() fails
+      // with ECONNREFUSED instead of hanging on TCP to a port whose
+      // upstream SSH channel is dead. We don't tear down the pool itself —
+      // callers get a clean error and the process keeps running.
+      if (localServerRef?.listening) {
+        localServerRef.close();
+      }
     });
 
     client.on("ready", () => {
@@ -260,6 +268,8 @@ function setupSSHTunnel(config: DatabaseConfig): Promise<TunnelResult> {
           }
         );
       });
+
+      localServerRef = localServer;
 
       // Keep a persistent 'error' listener so late EMFILE/accept failures
       // don't crash the process.

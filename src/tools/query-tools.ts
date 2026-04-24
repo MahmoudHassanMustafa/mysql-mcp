@@ -50,11 +50,13 @@ export function registerQueryTools(server: McpServer) {
           await conn.query(`USE ${escapeId(db)}`);
         }
 
-        // Auto-append LIMIT to unbounded SELECT to prevent OOM
+        // Auto-append LIMIT to unbounded SELECT to prevent OOM. Strip a
+        // trailing ';' first — appending "LIMIT 1000" after a terminator
+        // produces invalid SQL when multipleStatements is off.
         let boundedQuery = query;
         const normalized = stripSQLComments(query);
         if (/^\s*SELECT\b/i.test(normalized) && !/\bLIMIT\b/i.test(normalized)) {
-          boundedQuery = `${query} LIMIT ${MAX_RESULT_ROWS}`;
+          boundedQuery = `${query.replace(/;\s*$/, "")} LIMIT ${MAX_RESULT_ROWS}`;
         }
 
         const startTime = Date.now();
@@ -65,11 +67,12 @@ export function registerQueryTools(server: McpServer) {
         const elapsed = Date.now() - startTime;
 
         if (Array.isArray(rows) && rows.length > 0 && fields) {
-          const limited = (rows as Record<string, unknown>[]).slice(0, 500);
+          // formatAsTable enforces a byte cap on output and reports any
+          // rows it dropped — no need for a second manual slice here.
           const text = [
-            formatAsTable(limited),
+            formatAsTable(rows as Record<string, unknown>[]),
             "",
-            `${(rows as unknown[]).length} row(s) returned in ${elapsed}ms${(rows as unknown[]).length > 500 ? " (showing first 500)" : ""}`,
+            `${(rows as unknown[]).length} row(s) returned in ${elapsed}ms`,
           ].join("\n");
           return toolOk(text);
         }

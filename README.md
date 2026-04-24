@@ -224,8 +224,11 @@ Or with custom certificates:
 | Tool | Description |
 |------|-------------|
 | `list_tables` | List tables with row counts and engine info |
+| `list_views` | List views with definer, security type, updatability |
 | `describe_table` | Show columns, indexes, and CREATE TABLE statement |
+| `describe_view` | Show columns and CREATE VIEW DDL of a view |
 | `get_ddl` | Get clean CREATE TABLE DDL |
+| `get_view_ddl` | Get clean CREATE VIEW DDL (raw, not truncated) |
 | `get_foreign_keys` | Show FK relationships with cascade rules |
 | `get_indexes` | Show all indexes with duplicate detection |
 | `search_columns` | Find columns by name pattern across all tables |
@@ -289,7 +292,7 @@ Prompts appear in the MCP prompt list. Select one and provide the required argum
 
 - **Read-only by default.** Write queries (INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE) are blocked unless `"readonly": false` is set on the connection.
 - **Parameterized queries.** The `execute_query` tool uses prepared statements with `?` placeholders to prevent SQL injection.
-- **Result limits.** Unbounded SELECT queries are auto-limited to 1000 rows. Display output is capped at 500 rows. Column values are truncated at 60 characters in table output.
+- **Result limits.** Unbounded SELECT queries are auto-limited to 1000 rows. Table output is additionally capped at 256KB with a truncation note; individual cell values are truncated at 120 characters.
 - **Config file in .gitignore.** The `config.json` file containing credentials is excluded from version control.
 
 ## Project structure
@@ -308,7 +311,7 @@ querybridge-mcp/
     tools/
       index.ts            Tool registration barrel
       connection-tools.ts list_connections, list_databases, use_database
-      schema-tools.ts     list_tables, describe_table, get_ddl, get_foreign_keys, get_indexes, search_columns
+      schema-tools.ts     list_tables, describe_table, get_ddl, get_foreign_keys, get_indexes, search_columns, list_views, describe_view, get_view_ddl
       query-tools.ts      execute_query, explain_query
       data-tools.ts       sample_data, get_table_stats
       routines-tools.ts   list_routines, get_routine_ddl, list_triggers, get_trigger_ddl, list_events, get_event_ddl

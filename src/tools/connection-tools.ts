@@ -1,9 +1,9 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
-  getPool,
   getConnectionConfig,
   listConnectionNames,
+  queryWithTimeout,
   setActiveDatabase,
 } from "../connection.js";
 import { toolOk, toolError, toolHandler } from "../helpers.js";
@@ -32,11 +32,11 @@ export function registerConnectionTools(server: McpServer) {
     "List all databases on a connection",
     { connection: z.string().describe("Connection name") },
     toolHandler("list_databases", async ({ connection }) => {
-      const pool = getPool(connection);
-      const [rows] = await pool.query("SHOW DATABASES");
-      const databases = (rows as Array<Record<string, string>>).map(
-        (r) => Object.values(r)[0]
+      const rows = await queryWithTimeout<Array<Record<string, string>>>(
+        connection,
+        "SHOW DATABASES"
       );
+      const databases = rows.map((r) => Object.values(r)[0]);
       return toolOk(`${databases.join("\n")}\n\n${databases.length} database(s)`);
     })
   );
@@ -49,9 +49,12 @@ export function registerConnectionTools(server: McpServer) {
       database: z.string().describe("Database name to switch to"),
     },
     toolHandler("use_database", async ({ connection, database }) => {
-      const pool = getPool(connection);
-      const [rows] = await pool.query("SHOW DATABASES LIKE ?", [database]);
-      if ((rows as unknown[]).length === 0) {
+      const rows = await queryWithTimeout<unknown[]>(
+        connection,
+        "SHOW DATABASES LIKE ?",
+        [database]
+      );
+      if (rows.length === 0) {
         return toolError(`Database "${database}" not found`);
       }
       setActiveDatabase(connection, database);

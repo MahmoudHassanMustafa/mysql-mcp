@@ -9,6 +9,22 @@ import { registerResources } from "./resources.js";
 import { registerPrompts } from "./prompts.js";
 import { log } from "./helpers.js";
 
+// Stay alive on background errors. A single unhandled rejection (e.g. a
+// dropped SSH tunnel emitting late, or a pool connection dying between
+// tool calls) would otherwise kill the MCP process and Claude Code cannot
+// respawn a stdio server mid-session.
+process.on("uncaughtException", (err) => {
+  log("error", "uncaughtException", {
+    error: err.message,
+    stack: err.stack,
+  });
+});
+process.on("unhandledRejection", (reason) => {
+  log("error", "unhandledRejection", {
+    reason: reason instanceof Error ? reason.message : String(reason),
+  });
+});
+
 async function main() {
   const config = loadConfig();
 

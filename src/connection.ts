@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { Client as SSHClient } from "ssh2";
 import mysql from "mysql2/promise";
-import type { Pool, PoolConnection } from "mysql2/promise";
+import type { Pool } from "mysql2/promise";
 import type { DatabaseConfig, SSLConfig } from "./types.js";
 import type { ConnectConfig } from "ssh2";
 import net from "node:net";
@@ -114,6 +114,27 @@ export function getQueryTimeout(name: string): number {
   return getConnectionConfig(name).queryTimeout ?? 30000;
 }
 
+/**
+ * Run a query through the pool with the connection's configured timeout
+ * applied as the mysql2 client-side timeout. Returns just the rows.
+ *
+ * Use this for information_schema reads and other schema-introspection
+ * queries that can be slow on large servers — without a timeout, a slow
+ * query would hang the MCP tool call past Claude Code's request deadline.
+ * On timeout expiry mysql2 destroys the underlying connection; the pool
+ * replaces it on the next call.
+ */
+export async function queryWithTimeout<T = unknown>(
+  connection: string,
+  sql: string,
+  params: unknown[] = [],
+): Promise<T> {
+  const pool = getPool(connection);
+  const timeout = getQueryTimeout(connection);
+  const [rows] = await pool.query({ sql, timeout }, params);
+  return rows as T;
+}
+
 export async function closeAll(): Promise<void> {
   for (const [name, managed] of connections) {
     try {
@@ -142,10 +163,11 @@ interface TunnelResult {
 }
 
 function setupSSHTunnel(config: DatabaseConfig): Promise<TunnelResult> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolvePromise, rejectPromise) => {
     const ssh = config.ssh!;
     const client = new SSHClient();
     const hostVerifier = buildHostVerifier(ssh.hostFingerprint);
+    let settled = false;
 
     if (hostVerifier) {
       log("info", "SSH host fingerprint verification enabled", {
@@ -165,6 +187,10 @@ function setupSSHTunnel(config: DatabaseConfig): Promise<TunnelResult> {
       port: ssh.port ?? 22,
       username: ssh.username,
       readyTimeout: 10000,
+      // Defaults picked to survive 60-120s bastion idle timeouts during
+      // schema scans. Users can opt out with keepaliveInterval: 0.
+      keepaliveInterval: ssh.keepaliveInterval ?? 30000,
+      keepaliveCountMax: ssh.keepaliveCountMax ?? 3,
       ...(hostVerifier ? { hostVerifier } : {}),
     };
 
@@ -177,7 +203,28 @@ function setupSSHTunnel(config: DatabaseConfig): Promise<TunnelResult> {
       sshConfig.password = ssh.password;
     }
 
-    client.on("error", reject);
+    // Persistent listeners — the ssh2 Client can emit 'error' at any time
+    // (keepalive failure, remote disconnect). Without a live listener Node
+    // would crash the process on an unhandled 'error' event after the
+    // initial connect resolved.
+    client.on("error", (err) => {
+      log("warn", "SSH client error", {
+        connection: config.name,
+        error: err.message,
+      });
+      if (!settled) {
+        settled = true;
+        rejectPromise(err);
+      }
+    });
+    client.on("end", () => {
+      log("info", "SSH client disconnected (end)", {
+        connection: config.name,
+      });
+    });
+    client.on("close", () => {
+      log("info", "SSH client closed", { connection: config.name });
+    });
 
     client.on("ready", () => {
       const localServer = net.createServer((sock) => {
@@ -214,17 +261,29 @@ function setupSSHTunnel(config: DatabaseConfig): Promise<TunnelResult> {
         );
       });
 
+      // Keep a persistent 'error' listener so late EMFILE/accept failures
+      // don't crash the process.
+      localServer.on("error", (err) => {
+        log("warn", "SSH tunnel localServer error", {
+          connection: config.name,
+          error: err.message,
+        });
+        if (!settled) {
+          settled = true;
+          rejectPromise(err);
+        }
+      });
+
       localServer.listen(0, "127.0.0.1", () => {
         const addr = localServer.address() as net.AddressInfo;
-        resolve({
+        settled = true;
+        resolvePromise({
           host: "127.0.0.1",
           port: addr.port,
           sshClient: client,
           localServer,
         });
       });
-
-      localServer.on("error", reject);
     });
 
     client.connect(sshConfig);

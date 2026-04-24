@@ -159,6 +159,8 @@ function parseSSH(raw: unknown, connIndex: number) {
       : undefined,
     passphrase: s.passphrase as string | undefined,
     hostFingerprint: s.hostFingerprint as string | undefined,
+    keepaliveInterval: s.keepaliveInterval as number | undefined,
+    keepaliveCountMax: s.keepaliveCountMax as number | undefined,
   };
 }
 

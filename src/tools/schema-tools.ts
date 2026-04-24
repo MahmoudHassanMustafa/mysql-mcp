@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getPool, getConnectionConfig } from "../connection.js";
+import { queryWithTimeout } from "../connection.js";
 import {
   qualifiedTable,
   resolveDb,
@@ -21,16 +21,15 @@ export function registerSchemaTools(server: McpServer) {
     toolHandler("list_tables", async ({ connection, database }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
-      const pool = getPool(connection);
 
-      const [rows] = await pool.query(
+      const tables = await queryWithTimeout<Array<Record<string, unknown>>>(
+        connection,
         `SELECT TABLE_NAME, TABLE_ROWS, ENGINE, TABLE_COMMENT
          FROM information_schema.TABLES
          WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'
          ORDER BY TABLE_NAME`,
         [r.db]
       );
-      const tables = rows as Array<Record<string, unknown>>;
       if (tables.length === 0) return toolOk("No tables found");
 
       return toolOk(
@@ -51,14 +50,15 @@ export function registerSchemaTools(server: McpServer) {
     toolHandler("describe_table", async ({ connection, table, database }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
-      const pool = getPool(connection);
       const qt = qualifiedTable(r.db, table);
 
-      const [columns] = await pool.query(`DESCRIBE ${qt}`);
-      const [createResult] = await pool.query(`SHOW CREATE TABLE ${qt}`);
-      const createStatement =
-        (createResult as Array<Record<string, string>>)[0]?.["Create Table"] ?? "";
-      const [indexes] = await pool.query(`SHOW INDEX FROM ${qt}`);
+      const columns = await queryWithTimeout(connection, `DESCRIBE ${qt}`);
+      const createResult = await queryWithTimeout<Array<Record<string, string>>>(
+        connection,
+        `SHOW CREATE TABLE ${qt}`
+      );
+      const createStatement = createResult[0]?.["Create Table"] ?? "";
+      const indexes = await queryWithTimeout(connection, `SHOW INDEX FROM ${qt}`);
 
       const output = [
         "## Columns",
@@ -89,12 +89,13 @@ export function registerSchemaTools(server: McpServer) {
     toolHandler("get_ddl", async ({ connection, table, database }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
-      const pool = getPool(connection);
       const qt = qualifiedTable(r.db, table);
 
-      const [rows] = await pool.query(`SHOW CREATE TABLE ${qt}`);
-      const ddl =
-        (rows as Array<Record<string, string>>)[0]?.["Create Table"] ?? "";
+      const rows = await queryWithTimeout<Array<Record<string, string>>>(
+        connection,
+        `SHOW CREATE TABLE ${qt}`
+      );
+      const ddl = rows[0]?.["Create Table"] ?? "";
       return toolOk(ddl);
     })
   );
@@ -111,7 +112,6 @@ export function registerSchemaTools(server: McpServer) {
     toolHandler("get_foreign_keys", async ({ connection, table, database }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
-      const pool = getPool(connection);
 
       let sql = `
         SELECT
@@ -136,8 +136,11 @@ export function registerSchemaTools(server: McpServer) {
       }
       sql += ` ORDER BY kcu.TABLE_NAME, kcu.ORDINAL_POSITION`;
 
-      const [rows] = await pool.query(sql, params);
-      const fks = rows as Array<Record<string, string>>;
+      const fks = await queryWithTimeout<Array<Record<string, string>>>(
+        connection,
+        sql,
+        params
+      );
 
       if (fks.length === 0) {
         return toolOk(table ? `No foreign keys on ${table}` : `No foreign keys in ${r.db}`);
@@ -164,7 +167,6 @@ export function registerSchemaTools(server: McpServer) {
     toolHandler("get_indexes", async ({ connection, table, database }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
-      const pool = getPool(connection);
 
       let sql = `
         SELECT
@@ -185,8 +187,11 @@ export function registerSchemaTools(server: McpServer) {
       }
       sql += ` ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX`;
 
-      const [rows] = await pool.query(sql, params);
-      const stats = rows as Array<Record<string, unknown>>;
+      const stats = await queryWithTimeout<Array<Record<string, unknown>>>(
+        connection,
+        sql,
+        params
+      );
       if (stats.length === 0) return toolOk("No indexes found");
 
       // Group by table + index name
@@ -255,16 +260,15 @@ export function registerSchemaTools(server: McpServer) {
     toolHandler("search_columns", async ({ connection, pattern, database }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
-      const pool = getPool(connection);
 
-      const [rows] = await pool.query(
+      const cols = await queryWithTimeout<Array<Record<string, unknown>>>(
+        connection,
         `SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT
          FROM information_schema.COLUMNS
          WHERE TABLE_SCHEMA = ? AND COLUMN_NAME LIKE ?
          ORDER BY TABLE_NAME, ORDINAL_POSITION`,
         [r.db, pattern]
       );
-      const cols = rows as Array<Record<string, unknown>>;
       if (cols.length === 0) return toolOk(`No columns matching "${pattern}"`);
 
       return toolOk(

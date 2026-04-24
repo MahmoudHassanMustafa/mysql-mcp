@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getPool } from "../connection.js";
+import { queryWithTimeout } from "../connection.js";
 import {
   escapeId,
   resolveDb,
@@ -25,7 +25,6 @@ export function registerRoutinesTools(server: McpServer) {
     toolHandler("list_routines", async ({ connection, database, type }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
-      const pool = getPool(connection);
       const routineType = type ?? "ALL";
 
       let sql = `
@@ -48,8 +47,11 @@ export function registerRoutinesTools(server: McpServer) {
       }
       sql += ` ORDER BY ROUTINE_TYPE, ROUTINE_NAME`;
 
-      const [rows] = await pool.query(sql, params);
-      const routines = rows as Array<Record<string, unknown>>;
+      const routines = await queryWithTimeout<Array<Record<string, unknown>>>(
+        connection,
+        sql,
+        params
+      );
 
       if (routines.length === 0) {
         return toolOk(`No ${routineType === "ALL" ? "routines" : routineType.toLowerCase() + "s"} found in ${r.db}`);
@@ -78,26 +80,27 @@ export function registerRoutinesTools(server: McpServer) {
     toolHandler("get_routine_ddl", async ({ connection, name, database, type }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
-      const pool = getPool(connection);
 
       // Auto-detect type if not provided
       let routineType = type;
       if (!routineType) {
-        const [check] = await pool.query(
+        const check = await queryWithTimeout<Array<Record<string, string>>>(
+          connection,
           `SELECT ROUTINE_TYPE FROM information_schema.ROUTINES
            WHERE ROUTINE_SCHEMA = ? AND ROUTINE_NAME = ?`,
           [r.db, name]
         );
-        const found = (check as Array<Record<string, string>>)[0];
+        const found = check[0];
         if (!found) return toolOk(`Routine "${name}" not found in ${r.db}`);
         routineType = found.ROUTINE_TYPE as "PROCEDURE" | "FUNCTION";
       }
 
       const qualifiedName = `${escapeId(r.db)}.${escapeId(name)}`;
-      const [rows] = await pool.query(
+      const rows = await queryWithTimeout<Array<Record<string, string>>>(
+        connection,
         `SHOW CREATE ${routineType} ${qualifiedName}`
       );
-      const row = (rows as Array<Record<string, string>>)[0];
+      const row = rows[0];
       const ddlKey =
         routineType === "PROCEDURE"
           ? "Create Procedure"
@@ -120,7 +123,6 @@ export function registerRoutinesTools(server: McpServer) {
     toolHandler("list_triggers", async ({ connection, table, database }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
-      const pool = getPool(connection);
 
       let sql = `
         SELECT
@@ -141,8 +143,11 @@ export function registerRoutinesTools(server: McpServer) {
       }
       sql += ` ORDER BY EVENT_OBJECT_TABLE, ACTION_TIMING, EVENT_MANIPULATION`;
 
-      const [rows] = await pool.query(sql, params);
-      const triggers = rows as Array<Record<string, unknown>>;
+      const triggers = await queryWithTimeout<Array<Record<string, unknown>>>(
+        connection,
+        sql,
+        params
+      );
 
       if (triggers.length === 0) {
         return toolOk(
@@ -170,11 +175,13 @@ export function registerRoutinesTools(server: McpServer) {
     toolHandler("get_trigger_ddl", async ({ connection, name, database }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
-      const pool = getPool(connection);
 
       const qualifiedName = `${escapeId(r.db)}.${escapeId(name)}`;
-      const [rows] = await pool.query(`SHOW CREATE TRIGGER ${qualifiedName}`);
-      const row = (rows as Array<Record<string, string>>)[0];
+      const rows = await queryWithTimeout<Array<Record<string, string>>>(
+        connection,
+        `SHOW CREATE TRIGGER ${qualifiedName}`
+      );
+      const row = rows[0];
       const ddl = row?.["SQL Original Statement"] ?? "";
 
       return toolOk(`-- TRIGGER: ${name}\n${ddl}`);
@@ -192,9 +199,9 @@ export function registerRoutinesTools(server: McpServer) {
     toolHandler("list_events", async ({ connection, database }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
-      const pool = getPool(connection);
 
-      const [rows] = await pool.query(
+      const events = await queryWithTimeout<Array<Record<string, unknown>>>(
+        connection,
         `SELECT
           EVENT_NAME,
           EVENT_TYPE,
@@ -210,7 +217,6 @@ export function registerRoutinesTools(server: McpServer) {
         ORDER BY EVENT_NAME`,
         [r.db]
       );
-      const events = rows as Array<Record<string, unknown>>;
 
       if (events.length === 0) return toolOk(`No events in ${r.db}`);
 
@@ -232,11 +238,13 @@ export function registerRoutinesTools(server: McpServer) {
     toolHandler("get_event_ddl", async ({ connection, name, database }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
-      const pool = getPool(connection);
 
       const qualifiedName = `${escapeId(r.db)}.${escapeId(name)}`;
-      const [rows] = await pool.query(`SHOW CREATE EVENT ${qualifiedName}`);
-      const row = (rows as Array<Record<string, string>>)[0];
+      const rows = await queryWithTimeout<Array<Record<string, string>>>(
+        connection,
+        `SHOW CREATE EVENT ${qualifiedName}`
+      );
+      const row = rows[0];
       const ddl = row?.["Create Event"] ?? "";
 
       return toolOk(`-- EVENT: ${name}\n${ddl}`);

@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getPool } from "../connection.js";
+import { queryWithTimeout } from "../connection.js";
 import { resolveDb, toolOk, toolHandler } from "../helpers.js";
 
 export function registerErdTool(server: McpServer) {
@@ -18,7 +18,6 @@ export function registerErdTool(server: McpServer) {
     toolHandler("generate_erd", async ({ connection, database, tables }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
-      const pool = getPool(connection);
 
       // Get columns
       let colSql = `
@@ -33,13 +32,12 @@ export function registerErdTool(server: McpServer) {
       }
       colSql += ` ORDER BY TABLE_NAME, ORDINAL_POSITION`;
 
-      const [colRows] = await pool.query(colSql, colParams);
-      const columns = colRows as Array<{
+      const columns = await queryWithTimeout<Array<{
         TABLE_NAME: string;
         COLUMN_NAME: string;
         COLUMN_TYPE: string;
         COLUMN_KEY: string;
-      }>;
+      }>>(connection, colSql, colParams);
 
       if (columns.length === 0) return toolOk("No tables found");
 
@@ -60,13 +58,12 @@ export function registerErdTool(server: McpServer) {
         fkParams.push(...tables);
       }
 
-      const [fkRows] = await pool.query(fkSql, fkParams);
-      const foreignKeys = fkRows as Array<{
+      const foreignKeys = await queryWithTimeout<Array<{
         TABLE_NAME: string;
         COLUMN_NAME: string;
         REFERENCED_TABLE_NAME: string;
         REFERENCED_COLUMN_NAME: string;
-      }>;
+      }>>(connection, fkSql, fkParams);
 
       // Build set of FK columns for marking
       const fkColSet = new Set(

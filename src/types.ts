@@ -13,6 +13,16 @@ export interface SSHConfig {
    * verification and a warning is logged.
    */
   hostFingerprint?: string;
+  /**
+   * SSH-level keepalive interval in ms. Prevents bastions and cloud SSH
+   * endpoints from dropping idle tunnels between tool calls. Set to 0 to
+   * disable. Default: 30000.
+   */
+  keepaliveInterval?: number;
+  /**
+   * Consecutive unanswered keepalives before ssh2 disconnects. Default: 3.
+   */
+  keepaliveCountMax?: number;
 }
 
 export interface SSLConfig {

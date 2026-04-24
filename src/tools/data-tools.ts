@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getPool } from "../connection.js";
+import { queryWithTimeout } from "../connection.js";
 import {
   qualifiedTable,
   resolveDb,
@@ -23,7 +23,6 @@ export function registerDataTools(server: McpServer) {
     toolHandler("get_table_stats", async ({ connection, database, table }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
-      const pool = getPool(connection);
 
       let sql = `
         SELECT
@@ -45,8 +44,11 @@ export function registerDataTools(server: McpServer) {
       }
       sql += ` ORDER BY DATA_LENGTH DESC`;
 
-      const [rows] = await pool.query(sql, params);
-      const tables = rows as Array<Record<string, unknown>>;
+      const tables = await queryWithTimeout<Array<Record<string, unknown>>>(
+        connection,
+        sql,
+        params
+      );
       if (tables.length === 0) return toolOk("No tables found");
 
       // Format sizes for readability
@@ -88,12 +90,14 @@ export function registerDataTools(server: McpServer) {
     toolHandler("sample_data", async ({ connection, table, database, limit }) => {
       const r = resolveDb(connection, database);
       if ("error" in r) return r.error;
-      const pool = getPool(connection);
       const qt = qualifiedTable(r.db, table);
       const n = limit ?? 5;
 
-      const [rows] = await pool.query(`SELECT * FROM ${qt} LIMIT ?`, [n]);
-      const data = rows as Array<Record<string, unknown>>;
+      const data = await queryWithTimeout<Array<Record<string, unknown>>>(
+        connection,
+        `SELECT * FROM ${qt} LIMIT ?`,
+        [n]
+      );
 
       if (data.length === 0) return toolOk(`Table ${table} is empty`);
 
